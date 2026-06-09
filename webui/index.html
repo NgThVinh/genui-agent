@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AG-UI · Live Generative Canvas</title>
+  <title>AG-UI · Agent Whiteboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -12,12 +12,12 @@
     rel="stylesheet" />
   <style>
     /* ------------------------------------------------------------------ *
-   * Identity: a "control booth" — dark, quiet chrome around a lit stage.
-   * The agent's output is the lit thing (a stack of white panels); the
-   * controls are the dark booth (chat rail + header). The signature is the
-   * event wire on the divider: a live track that fires a packet from booth ->
-   * stage each time an AG-UI event crosses it. The stage now BUILDS UP: panels
-   * appear and update as the agent works through a response step by step.
+   * The generative box is now an infinite WHITEBOARD: a pan/zoom canvas
+   * of free-floating cards. Each ui_panel is a draggable, resizable card
+   * (agent HTML in a sandboxed iframe); the board frames new cards as they
+   * stream, and the user can roam, rearrange, and zoom without limits.
+   * Dark "booth" chrome (chat + header) around the lit board, with the
+   * event wire on the divider as the signature.
    * ------------------------------------------------------------------ */
     :root {
       --ink: #14161c;
@@ -30,7 +30,7 @@
       --accent: #7b78ff;
       --accent-2: #34d0c4;
       --warn: #ff6b5a;
-      --canvas-bg: #eef0f4;
+      --board-bg: #eceef3;
       --card: #ffffff;
       --card-line: #e5e8ef;
       --card-ink: #1b1e27;
@@ -44,8 +44,7 @@
       box-sizing: border-box;
     }
 
-    /* The `hidden` attribute (toggled from JS) must beat any `display` rule below;
-     without this, `.empty`/`.p-skeleton` keep their `display:flex` and never hide. */
+    /* `hidden` (toggled from JS) must beat any `display` rule below. */
     [hidden] {
       display: none !important;
     }
@@ -458,12 +457,12 @@
       }
     }
 
-    /* canvas / stage */
+    /* canvas header */
     .canvas {
       flex: 1;
       display: flex;
       flex-direction: column;
-      background: var(--canvas-bg);
+      background: var(--board-bg);
       min-width: 0;
     }
 
@@ -477,6 +476,7 @@
       background: #e7eaf0;
       border-bottom: 1px solid #d8dce6;
       color: var(--card-ink);
+      z-index: 3;
     }
 
     .canvas-head .dots {
@@ -517,57 +517,68 @@
       white-space: nowrap;
     }
 
-    .stage {
+    /* ---------------- the whiteboard ---------------- */
+    .board {
       position: relative;
       flex: 1;
-      min-height: 0;
+      overflow: hidden;
+      background: var(--board-bg);
+      cursor: grab;
+      touch-action: none;
     }
 
-    .panels {
+    .board.panning {
+      cursor: grabbing;
+    }
+
+    .board.busy .card iframe {
+      pointer-events: none;
+    }
+
+    /* don't let iframes swallow pointer during drag/pan/resize */
+    .grid {
       position: absolute;
       inset: 0;
-      overflow-y: auto;
-      padding: 20px 20px 40px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 16px;
+      background-image: radial-gradient(circle, #c5cbd8 1.1px, transparent 1.5px);
+      background-size: 24px 24px;
+      pointer-events: none;
     }
 
-    .panels::-webkit-scrollbar {
-      width: 11px;
+    .grid.animate {
+      transition: background-position .32s cubic-bezier(.2, .7, .3, 1), background-size .32s cubic-bezier(.2, .7, .3, 1);
     }
 
-    .panels::-webkit-scrollbar-thumb {
-      background: #c4cad6;
-      border-radius: 99px;
-      border: 3px solid var(--canvas-bg);
+    .world {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform-origin: 0 0;
+      will-change: transform;
     }
 
-    .panel {
-      width: 100%;
-      max-width: 780px;
+    .world.animate {
+      transition: transform .32s cubic-bezier(.2, .7, .3, 1);
+    }
+
+    .card {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 440px;
       background: var(--card);
       border: 1px solid var(--card-line);
-      border-radius: 14px;
-      box-shadow: 0 12px 36px #1b203312, 0 2px 5px #1b20330f;
+      border-radius: 13px;
+      box-shadow: 0 14px 40px #1b203316, 0 2px 6px #1b20330f;
       overflow: hidden;
-      animation: panelIn .34s cubic-bezier(.2, .7, .3, 1) both;
+      will-change: transform;
     }
 
-    @keyframes panelIn {
-      from {
-        opacity: 0;
-        transform: translateY(10px) scale(.99)
-      }
-
-      to {
-        opacity: 1;
-        transform: none
-      }
+    .card.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px #7b78ff55, 0 20px 52px #1b203326;
     }
 
-    .panel.flash {
+    .card.flash {
       animation: flash 1.1s ease;
     }
 
@@ -577,36 +588,42 @@
       }
 
       18% {
-        box-shadow: 0 0 0 4px #7b78ff55
+        box-shadow: 0 0 0 4px #7b78ff66
       }
 
       100% {
-        box-shadow: 0 12px 36px #1b203312
+        box-shadow: 0 14px 40px #1b203316
       }
     }
 
-    .panel[data-status="active"] {
-      border-color: #7b78ff55;
+    .card[data-status="active"] {
+      border-color: #7b78ff66;
     }
 
-    .panel[data-status="done"] {
-      border-color: #1fbf9c44;
+    .card[data-status="done"] {
+      border-color: #1fbf9c55;
     }
 
-    .panel[data-status="error"] {
-      border-color: #ff6b5a55;
+    .card[data-status="error"] {
+      border-color: #ff6b5a66;
     }
 
-    .p-head {
+    .c-head {
       display: flex;
       align-items: center;
       gap: 9px;
-      padding: 9px 11px;
+      padding: 8px 10px;
       border-bottom: 1px solid var(--card-line);
       background: #fafbfd;
+      cursor: grab;
+      user-select: none;
     }
 
-    .p-badge {
+    .c-head:active {
+      cursor: grabbing;
+    }
+
+    .c-badge {
       width: 18px;
       height: 18px;
       border-radius: 50%;
@@ -619,23 +636,23 @@
       color: #8a92a3;
     }
 
-    .panel[data-status="active"] .p-badge {
+    .card[data-status="active"] .c-badge {
       background: #5b58f0;
       color: #fff;
       animation: breathe 1.1s ease-in-out infinite;
     }
 
-    .panel[data-status="done"] .p-badge {
+    .card[data-status="done"] .c-badge {
       background: #daf5ee;
       color: var(--done);
     }
 
-    .panel[data-status="error"] .p-badge {
+    .card[data-status="error"] .c-badge {
       background: #ffe3df;
       color: #d6453a;
     }
 
-    .p-title {
+    .c-title {
       flex: 1;
       font-family: "Space Grotesk", sans-serif;
       font-weight: 600;
@@ -646,53 +663,50 @@
       text-overflow: ellipsis;
     }
 
-    .p-src {
+    .c-btn {
+      flex: 0 0 auto;
       font-family: var(--mono);
-      font-size: 11px;
+      font-size: 12px;
+      line-height: 1;
       color: #7a8295;
       background: #fff;
       border: 1px solid #d8dce6;
       border-radius: 6px;
-      padding: 3px 8px;
+      padding: 4px 7px;
       cursor: pointer;
     }
 
-    .p-src:hover {
+    .c-btn:hover {
       color: #2a2f3a;
       border-color: #b9c0cf;
     }
 
-    .p-src[aria-pressed="true"] {
+    .c-btn[aria-pressed="true"] {
       background: #2a2f3a;
       color: #fff;
       border-color: #2a2f3a;
     }
 
-    .p-body {
+    .c-body {
       position: relative;
     }
 
-    .p-body iframe {
+    .c-body iframe {
       width: 100%;
       height: 140px;
       border: 0;
       display: block;
       background: #fff;
-      transition: height .22s ease;
     }
 
-    .p-body iframe[hidden] {
-      display: none;
-    }
-
-    .p-skeleton {
+    .c-skeleton {
       display: flex;
       flex-direction: column;
       gap: 9px;
       padding: 18px;
     }
 
-    .p-skeleton span {
+    .c-skeleton span {
       height: 11px;
       border-radius: 6px;
       background: linear-gradient(90deg, #eef0f4 25%, #e1e5ec 37%, #eef0f4 63%);
@@ -700,15 +714,15 @@
       animation: shimmer 1.4s infinite;
     }
 
-    .p-skeleton span:nth-child(1) {
+    .c-skeleton span:nth-child(1) {
       width: 62%
     }
 
-    .p-skeleton span:nth-child(2) {
+    .c-skeleton span:nth-child(2) {
       width: 90%
     }
 
-    .p-skeleton span:nth-child(3) {
+    .c-skeleton span:nth-child(3) {
       width: 48%
     }
 
@@ -722,9 +736,9 @@
       }
     }
 
-    .p-source {
+    .c-source {
       margin: 0;
-      max-height: 420px;
+      max-height: 380px;
       overflow: auto;
       background: #0f1117;
       color: #cdd3e1;
@@ -737,33 +751,104 @@
       word-break: break-word;
     }
 
-    .p-source::-webkit-scrollbar {
+    .c-source::-webkit-scrollbar {
       width: 10px;
     }
 
-    .p-source::-webkit-scrollbar-thumb {
+    .c-source::-webkit-scrollbar-thumb {
       background: #ffffff1c;
       border-radius: 99px;
       border: 3px solid #0f1117;
     }
 
-    /* empty state */
+    .c-resize {
+      position: absolute;
+      right: 3px;
+      bottom: 3px;
+      width: 15px;
+      height: 15px;
+      cursor: nwse-resize;
+      border-right: 2px solid #c4cad6;
+      border-bottom: 2px solid #c4cad6;
+      border-bottom-right-radius: 5px;
+      opacity: .8;
+    }
+
+    .c-resize:hover {
+      border-color: var(--accent);
+      opacity: 1;
+    }
+
+    /* floating board toolbar */
+    .toolbar {
+      position: absolute;
+      left: 50%;
+      bottom: 16px;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      background: #ffffffee;
+      border: 1px solid #d8dce6;
+      border-radius: 12px;
+      padding: 5px;
+      box-shadow: 0 8px 26px #1b203326;
+      z-index: 4;
+    }
+
+    .toolbar button {
+      border: 0;
+      background: transparent;
+      color: #3a4150;
+      min-width: 32px;
+      height: 32px;
+      padding: 0 8px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      font-size: 16px;
+      font-family: var(--mono);
+    }
+
+    .toolbar button:hover {
+      background: #eef0f4;
+      color: #14161c;
+    }
+
+    .toolbar .zoom {
+      min-width: 50px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: #5b6172;
+      text-align: center;
+      cursor: default;
+    }
+
+    .toolbar .sep {
+      width: 1px;
+      height: 20px;
+      background: #dfe3ea;
+      margin: 0 3px;
+    }
+
+    /* empty state (pinned in the viewport, not on the board) */
     .empty {
       position: absolute;
-      inset: 20px;
+      inset: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       text-align: center;
-      border: 1.5px dashed #cdd3e1;
-      border-radius: 14px;
       padding: 24px;
       pointer-events: none;
+      z-index: 2;
     }
 
     .empty .inner {
       pointer-events: auto;
+      max-width: 440px;
     }
 
     .empty .mark {
@@ -788,7 +873,6 @@
       color: #6b7488;
       font-size: 13.5px;
       margin: 0 0 18px;
-      max-width: 400px;
       line-height: 1.55;
     }
 
@@ -797,7 +881,6 @@
       flex-wrap: wrap;
       gap: 9px;
       justify-content: center;
-      max-width: 560px;
     }
 
     .ex {
@@ -818,7 +901,7 @@
       transform: translateY(-1px);
     }
 
-    /* responsive: stack on narrow screens */
+    /* responsive */
     @media (max-width: 880px) {
       body {
         overflow: auto;
@@ -846,7 +929,7 @@
         min-height: 46vh;
       }
 
-      .stage {
+      .board {
         min-height: 60vh;
       }
     }
@@ -857,7 +940,7 @@
   <header class="topbar">
     <div class="brand">
       <span class="glyph" aria-hidden="true"></span>
-      <span>Live Generative Canvas <small>· ag-ui</small></span>
+      <span>Agent Whiteboard <small>· ag-ui</small></span>
     </div>
     <span class="spacer"></span>
     <span class="pill">model <b id="model">…</b></span>
@@ -870,7 +953,7 @@
       <div class="messages" id="messages" aria-live="polite"></div>
       <div class="composer">
         <div class="box">
-          <textarea id="input" rows="1" placeholder="Ask the agent to walk you through something…"></textarea>
+          <textarea id="input" rows="1" placeholder="Ask the agent to map something out…"></textarea>
           <button class="send" id="send" title="Send (Enter)" aria-label="Send">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
               stroke-linejoin="round">
@@ -890,25 +973,34 @@
     <section class="canvas">
       <div class="canvas-head">
         <span class="dots"><i></i><i></i><i></i></span>
-        <span class="title">Canvas</span>
+        <span class="title">Whiteboard</span>
         <span class="count" id="count"></span>
         <span class="evt" id="evt">idle</span>
       </div>
-      <div class="stage">
-        <div class="panels" id="panels"></div>
+      <div class="board" id="board">
+        <div class="grid" id="grid"></div>
+        <div class="world" id="world"></div>
         <div class="empty" id="empty">
           <div class="inner">
             <div class="mark" aria-hidden="true"></div>
-            <h2>The agent builds here, step by step</h2>
-            <p>Ask for something with a few moving parts. The agent narrates on the left and assembles panels here as it
-              goes — charts, diagrams, dashboards, live data.</p>
+            <h2>An infinite canvas for the agent</h2>
+            <p>Ask for anything with parts. The agent drops cards onto this board as it works — drag them around, zoom,
+              and roam freely. Each card can be a chart, diagram, dashboard, or live view.</p>
             <div class="examples" id="examples">
-              <button class="ex">Walk me through how RAG works, one diagram panel per stage</button>
-              <button class="ex">Compare 3 vector databases — a panel each, then a summary</button>
-              <button class="ex">Simulate a model training run and stream the loss curve live</button>
-              <button class="ex">Build a dashboard: a metric card, a bar chart, then a data table</button>
+              <button class="ex">Map the RAG pipeline as connected stages, one card each</button>
+              <button class="ex">Compare 3 vector databases — a card per option, then a verdict</button>
+              <button class="ex">Simulate a training run and stream the loss curve live</button>
+              <button class="ex">Lay out a system design: API, workers, queue, and DB cards</button>
             </div>
-            </div>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button id="zout" title="Zoom out">&#8722;</button>
+          <span class="zoom" id="zoom">100%</span>
+          <button id="zin" title="Zoom in">+</button>
+          <span class="sep"></span>
+          <button id="fit" title="Fit all cards">&#10530;</button>
+          <button id="tidy" title="Tidy layout">&#9638;</button>
         </div>
       </div>
     </section>
@@ -918,31 +1010,22 @@
     "use strict";
 
       const $ = (s) => document.querySelector(s);
-      const messagesEl = $("#messages");
-      const inputEl = $("#input");
-      const sendBtn = $("#send");
-      const panelsEl = $("#panels");
-      const emptyEl = $("#empty");
-      const evtEl = $("#evt");
-      const wire = $("#wire");
-      const countEl = $("#count");
-      const statusEl = $("#status");
-      const statusText = $("#statusText");
+      const messagesEl = $("#messages"), inputEl = $("#input"), sendBtn = $("#send");
+      const board = $("#board"), world = $("#world"), grid = $("#grid"), emptyEl = $("#empty");
+      const evtEl = $("#evt"), wire = $("#wire"), countEl = $("#count"), zoomLabel = $("#zoom");
+      const statusEl = $("#status"), statusText = $("#statusText");
 
-      const uid = () => (crypto.randomUUID ? crypto.randomUUID()
-        : "id-" + Math.random().toString(16).slice(2) + Date.now().toString(16));
+      const uid = () => (crypto.randomUUID ? crypto.randomUUID() : "id-" + Math.random().toString(16).slice(2) + Date.now().toString(16));
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
       const threadId = uid();
       let history = [];
       let streaming = false;
+      const UI_TOOLS = new Set(["add_or_update_panel", "push_panel_data", "focus_panel", "clear_canvas"]);
 
-        // UI tools build the canvas directly, so they don't need chat chips.
-        const UI_TOOLS = new Set(["add_or_update_panel", "push_panel_data", "focus_panel", "clear_canvas"]);
-
-        // Appended to every panel's HTML: reports content height to the host so panels
-        // auto-size, and posts under a private source so it never clashes with the
-        // agent's own 'agui' data messages.
-        const AUTOHEIGHT = '\n<script>(function(){function r(){var h=Math.max(document.body?document.body.scrollHeight:0,document.documentElement?document.documentElement.scrollHeight:0);parent.postMessage({source:"agui-internal",type:"height",height:h},"*");}window.addEventListener("load",r);window.addEventListener("resize",r);try{if(window.ResizeObserver&&document.body){new ResizeObserver(r).observe(document.body);}}catch(e){}setTimeout(r,60);setTimeout(r,300);setTimeout(r,1000);})();<\/script>';
+      // Appended to every card's HTML: reports content height so cards auto-size,
+      // on a private channel that can't collide with the agent's 'agui' data messages.
+      const AUTOHEIGHT = '\n<script>(function(){function r(){var h=Math.max(document.body?document.body.scrollHeight:0,document.documentElement?document.documentElement.scrollHeight:0);parent.postMessage({source:"agui-internal",type:"height",height:h},"*");}window.addEventListener("load",r);window.addEventListener("resize",r);try{if(window.ResizeObserver&&document.body){new ResizeObserver(r).observe(document.body);}}catch(e){}setTimeout(r,60);setTimeout(r,300);setTimeout(r,1000);})();<\/script>';
 
       /* ---------- model badge ---------- */
       fetch("/config").then(r => r.json()).then(c => { $("#model").textContent = c.model || "unknown"; })
@@ -950,14 +1033,13 @@
 
       /* ---------- status ---------- */
       function setStreaming(on) {
-        streaming = on;
-            sendBtn.disabled = on; inputEl.disabled = on;
-            statusEl.dataset.state = on ? "streaming" : "ready";
-            statusText.textContent = on ? "streaming" : "ready";
-            if (!on) inputEl.focus();
-          }
-          function setError(msg) {
-            addMessage("error", msg);
+          streaming = on; sendBtn.disabled = on; inputEl.disabled = on;
+          statusEl.dataset.state = on ? "streaming" : "ready";
+          statusText.textContent = on ? "streaming" : "ready";
+          if (!on) inputEl.focus();
+        }
+        function setError(msg) {
+          addMessage("error", msg);
       statusEl.dataset.state = "error"; statusText.textContent = "error"; evtEl.textContent = "error";
       streaming = false; sendBtn.disabled = false; inputEl.disabled = false;
     }
@@ -965,12 +1047,11 @@
       /* ---------- chat ---------- */
       function scrollChat() { messagesEl.scrollTop = messagesEl.scrollHeight; }
       function addMessage(role, text) {
-            const wrap = document.createElement("div"); wrap.className = "msg " + role;
-            const b = document.createElement("div"); b.className = "bubble"; b.textContent = text || "";
-            wrap.appendChild(b); messagesEl.appendChild(wrap); scrollChat();
-            return b;
-          }
-          function addToolChip(name) {
+      const w = document.createElement("div"); w.className = "msg " + role;
+      const b = document.createElement("div"); b.className = "bubble"; b.textContent = text || "";
+          w.appendChild(b); messagesEl.appendChild(w); scrollChat(); return b;
+        }
+        function addToolChip(name) {
       const el = document.createElement("div"); el.className = "toolchip";
       const g = document.createElement("span"); g.className = "gear"; g.textContent = "\u2699";
       const code = document.createElement("code"); code.textContent = name;
@@ -990,135 +1071,263 @@
       dot.addEventListener("animationend", () => dot.remove());
     }
 
-      /* ---------- the live canvas: a map of panels ---------- */
-      const panels = new Map(); // id -> { card, iframe, skeleton, source, srcBtn, badge, title, html, ready, queue }
-      let stick = true;
+      /* ================= WHITEBOARD ================= */
+      const cards = new Map();                 // id -> card object
+      let cam = { x: 40, y: 40, scale: 1 };    // camera: world is translate(x,y) scale(s)
+      let interaction = null;                  // active pan/drag/resize gesture
+      let follow = true;                       // auto-frame streamed cards until the user takes the wheel
+      let zTop = 1;
+      const COLS = 3, CARD_W = 440, GAP = 28, ORIGIN = 40, EST_H = 240;
+      let colBottoms = [ORIGIN, ORIGIN, ORIGIN];   // masonry: bottom y of each column
 
-      panelsEl.addEventListener("scroll", () => {
-        stick = panelsEl.scrollHeight - panelsEl.scrollTop - panelsEl.clientHeight < 140;
-      });
-      function scrollToBottom() { panelsEl.scrollTop = panelsEl.scrollHeight; }
+      function setCamera() {
+        world.style.transform = "translate(" + cam.x + "px, " + cam.y + "px) scale(" + cam.scale + ")";
+        const s = 24 * cam.scale;
+        grid.style.backgroundSize = s + "px " + s + "px";
+        grid.style.backgroundPosition = cam.x + "px " + cam.y + "px";
+        zoomLabel.textContent = Math.round(cam.scale * 100) + "%";
+      }
+      function animateCamera() {
+        world.classList.add("animate"); grid.classList.add("animate"); setCamera();
+        setTimeout(() => { world.classList.remove("animate"); grid.classList.remove("animate"); }, 340);
+      }
+
+      function placeNext() {
+        let col = 0; for (let i = 1; i < COLS; i++) if (colBottoms[i] < colBottoms[col]) col = i;
+        const x = ORIGIN + col * (CARD_W + GAP), y = colBottoms[col];
+        colBottoms[col] = y + EST_H + GAP;
+        return { x, y, col };
+      }
+      function recomputeColumns() {
+        colBottoms = new Array(COLS).fill(ORIGIN);
+        for (const c of cards.values()) {
+          if (c.col == null) continue;
+          const b = c.y + c.el.offsetHeight + GAP;
+          if (b > colBottoms[c.col]) colBottoms[c.col] = b;
+        }
+      }
+
+      function setCardTransform(c) { c.el.style.transform = "translate(" + c.x + "px, " + c.y + "px)"; }
+      function applyCardSize(c) {
+        c.el.style.width = c.w + "px";
+        if (!c.autoSize) { const hh = c.head.offsetHeight || 38; c.iframe.style.height = Math.max(60, c.h - hh) + "px"; }
+      }
+      function selectCard(c) {
+        for (const o of cards.values()) o.el.classList.toggle("selected", o === c);
+        if (c) c.el.style.zIndex = String(++zTop);
+      }
+
+      function ensureCard(id) {
+        let c = cards.get(id);
+        if (c) return c;
+
+      const el = document.createElement("article"); el.className = "card"; el.dataset.status = "info";
+      const head = document.createElement("div"); head.className = "c-head";
+      const badge = document.createElement("span"); badge.className = "c-badge";
+      const title = document.createElement("span"); title.className = "c-title"; title.textContent = id;
+      const srcBtn = document.createElement("button"); srcBtn.className = "c-btn"; srcBtn.title = "View source"; srcBtn.textContent = "</>"; srcBtn.setAttribute("aria-pressed", "false"); srcBtn.hidden = true;
+      const closeBtn = document.createElement("button"); closeBtn.className = "c-btn"; closeBtn.title = "Remove"; closeBtn.textContent = "\u00d7";
+      head.append(badge, title, srcBtn, closeBtn);
+
+      const body = document.createElement("div"); body.className = "c-body";
+      const skeleton = document.createElement("div"); skeleton.className = "c-skeleton";
+      skeleton.append(document.createElement("span"), document.createElement("span"), document.createElement("span"));
+      const iframe = document.createElement("iframe"); iframe.setAttribute("sandbox", "allow-scripts"); iframe.setAttribute("title", "Panel: " + id); iframe.hidden = true;
+      const source = document.createElement("pre"); source.className = "c-source"; source.hidden = true;
+      body.append(skeleton, iframe, source);
+
+      const grip = document.createElement("div"); grip.className = "c-resize"; grip.title = "Resize";
+      el.append(head, body, grip);
+
+      const pos = placeNext();
+      c = { id, el, head, iframe, skeleton, source, srcBtn, title, badge, grip, x: pos.x, y: pos.y, col: pos.col, w: CARD_W, h: 0, autoSize: true, ready: false, queue: [], html: "" };
+      setCardTransform(c); applyCardSize(c);
+
+      head.addEventListener("pointerdown", (e) => { if (e.target.closest(".c-btn")) return; selectCard(c); startDrag(e, c); });
+      grip.addEventListener("pointerdown", (e) => { e.stopPropagation(); selectCard(c); startResize(e, c); });
+      srcBtn.addEventListener("click", () => toggleSource(c));
+      closeBtn.addEventListener("click", () => removeCard(id));
+      iframe.addEventListener("load", () => { c.ready = true; flushQueue(c); });
+
+          cards.set(id, c); world.appendChild(el); selectCard(c); updateCount();
+          scheduleFollowFit();
+          return c;
+        }
+        function removeCard(id) {
+          const c = cards.get(id); if (!c) return;
+          c.el.remove(); cards.delete(id); recomputeColumns(); updateCount();
+        }
+        function setStatus(c, s) { s = s || "info"; c.el.dataset.status = s; c.badge.textContent = s === "done" ? "\u2713" : s === "error" ? "!" : ""; }
+        function setHtml(c, html) {
+          c.html = html; c.ready = false; c.skeleton.hidden = true; c.srcBtn.hidden = false;
+          if (!c.source.hidden) { c.source.textContent = html; }       // source view open: refresh it
+          else { c.iframe.hidden = false; if (c.autoSize) c.iframe.style.height = "60px"; c.iframe.srcdoc = html + AUTOHEIGHT; }
+        }
+        function toggleSource(c) {
+          const show = c.source.hidden;
+          c.srcBtn.setAttribute("aria-pressed", show ? "true" : "false");
+          if (show) { c.source.textContent = c.html || "(no content yet)"; c.source.hidden = false; c.iframe.hidden = true; c.skeleton.hidden = true; }
+          else { c.source.hidden = true; if (c.html) c.iframe.hidden = false; else c.skeleton.hidden = false; }
+        }
+
+      function flushQueue(c) { while (c.queue.length) postToCard(c, c.queue.shift()); }
+      function postToCard(c, data) { try { c.iframe.contentWindow.postMessage({ source: "agui", type: "data", data: data }, "*"); } catch (_) { } }
+      function pushData(id, data) {
+        const c = cards.get(id); if (!c) return;
+        if (c.ready && !c.iframe.hidden) postToCard(c, data);
+        else c.queue.push(data);                 // queued until the iframe finishes loading
+      }
+
+  function upsertCard(value) {
+    if (!value || !value.id) return;
+    const c = ensureCard(value.id);
+    if (value.title != null) c.title.textContent = value.title;
+    if (value.status != null) setStatus(c, value.status);
+    if (value.html != null) setHtml(c, value.html);
+    scheduleFollowFit();
+  }
+      function focusCard(id) {
+        const c = cards.get(id); if (!c) return;
+        follow = false;
+        const rect = board.getBoundingClientRect();
+        const w = c.el.offsetWidth, h = c.el.offsetHeight;
+        const scale = clamp(cam.scale < 0.6 ? 0.9 : cam.scale, 0.4, 1.6);
+        cam.scale = scale;
+        cam.x = rect.width / 2 - (c.x + w / 2) * scale;
+        cam.y = rect.height / 2 - (c.y + h / 2) * scale;
+        animateCamera(); selectCard(c);
+        c.el.classList.remove("flash"); void c.el.offsetWidth; c.el.classList.add("flash");
+    }
+      function clearBoard() {
+        cards.clear(); world.innerHTML = "";
+        colBottoms = new Array(COLS).fill(ORIGIN);
+        cam = { x: 40, y: 40, scale: 1 }; setCamera(); updateCount();
+      }
       function updateCount() {
-        const n = panels.size;
+        const n = cards.size;
         countEl.textContent = n ? "· " + n + " panel" + (n === 1 ? "" : "s") : "";
         emptyEl.hidden = n > 0;
+    }
+
+      /* ---------- camera controls ---------- */
+      function zoomAt(factor, clientX, clientY) {
+        const ns = clamp(cam.scale * factor, 0.2, 3);
+        const rect = board.getBoundingClientRect();
+        const px = clientX - rect.left, py = clientY - rect.top;
+        cam.x = px - ((px - cam.x) / cam.scale) * ns;
+        cam.y = py - ((py - cam.y) / cam.scale) * ns;
+        cam.scale = ns; setCamera();
       }
-
-      function ensurePanel(id) {
-        let p = panels.get(id);
-        if (p) return p;
-
-        const card = document.createElement("article"); card.className = "panel"; card.dataset.status = "info";
-        const head = document.createElement("div"); head.className = "p-head";
-        const badge = document.createElement("span"); badge.className = "p-badge";
-        const title = document.createElement("span"); title.className = "p-title"; title.textContent = id;
-        const srcBtn = document.createElement("button"); srcBtn.className = "p-src"; srcBtn.textContent = "</>"; srcBtn.setAttribute("aria-pressed", "false"); srcBtn.hidden = true;
-        head.append(badge, title, srcBtn);
-
-        const body = document.createElement("div"); body.className = "p-body";
-        const skeleton = document.createElement("div"); skeleton.className = "p-skeleton";
-        skeleton.append(document.createElement("span"), document.createElement("span"), document.createElement("span"));
-        const iframe = document.createElement("iframe");
-        iframe.setAttribute("sandbox", "allow-scripts");
-        iframe.setAttribute("title", "Panel: " + id);
-        iframe.hidden = true;
-        const source = document.createElement("pre"); source.className = "p-source"; source.hidden = true;
-        body.append(skeleton, iframe, source);
-
-        card.append(head, body);
-
-        p = { card, iframe, skeleton, source, srcBtn, badge, title, html: "", ready: false, queue: [] };
-        iframe.addEventListener("load", () => { p.ready = true; flushQueue(p); });
-        srcBtn.addEventListener("click", () => toggleSource(p));
-
-        panels.set(id, p);
-        panelsEl.appendChild(card);
-        updateCount();
-        return p;
-      }
-
-      function setStatus(p, status) {
-        const s = status || "info";
-        p.card.dataset.status = s;
-        p.badge.textContent = s === "done" ? "\u2713" : s === "error" ? "!" : "";
-      }
-      function setHtml(p, html) {
-        p.html = html;
-        p.ready = false;
-        p.skeleton.hidden = true;
-        p.srcBtn.hidden = false;
-        if (p.source.hidden === false) { // currently showing source -> refresh it
-          p.source.textContent = html;
-        } else {
-          p.iframe.hidden = false;
-          p.iframe.srcdoc = html + AUTOHEIGHT; // sandboxed; auto-height reporter appended
+      function fitAll(animate) {
+        if (cards.size === 0) { cam = { x: 40, y: 40, scale: 1 }; animate ? animateCamera() : setCamera(); return; }
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const c of cards.values()) {
+          const w = c.el.offsetWidth, h = c.el.offsetHeight;
+          minX = Math.min(minX, c.x); minY = Math.min(minY, c.y);
+          maxX = Math.max(maxX, c.x + w); maxY = Math.max(maxY, c.y + h);
         }
+        const rect = board.getBoundingClientRect(); const pad = 56;
+        const bw = Math.max(1, maxX - minX), bh = Math.max(1, maxY - minY);
+        const scale = clamp(Math.min((rect.width - 2 * pad) / bw, (rect.height - 2 * pad) / bh), 0.2, 1.2);
+        const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+        cam.scale = scale; cam.x = rect.width / 2 - cx * scale; cam.y = rect.height / 2 - cy * scale;
+        animate ? animateCamera() : setCamera();
       }
-      function toggleSource(p) {
-        const show = p.source.hidden;
-        p.srcBtn.setAttribute("aria-pressed", show ? "true" : "false");
-        if (show) {
-          p.source.textContent = p.html || "(no content yet)";
-          p.source.hidden = false; p.iframe.hidden = true; p.skeleton.hidden = true;
-        } else {
-          p.source.hidden = true;
-          if (p.html) { p.iframe.hidden = false; } else { p.skeleton.hidden = false; }
+      function tidy() {
+        colBottoms = new Array(COLS).fill(ORIGIN);
+        for (const c of cards.values()) {
+          let col = 0; for (let i = 1; i < COLS; i++) if (colBottoms[i] < colBottoms[col]) col = i;
+          c.col = col; c.x = ORIGIN + col * (CARD_W + GAP); c.y = colBottoms[col];
+          colBottoms[col] = c.y + c.el.offsetHeight + GAP;
+          setCardTransform(c);
         }
+        fitAll(true);
+      }
+      let fitT = null;
+      function scheduleFollowFit() {
+        if (!follow || fitT) return;
+        fitT = setTimeout(() => { fitT = null; if (follow) fitAll(true); }, 130);
       }
 
-      function flushQueue(p) { while (p.queue.length) postToPanel(p, p.queue.shift()); }
-      function postToPanel(p, data) {
-        try { p.iframe.contentWindow.postMessage({ source: "agui", type: "data", data: data }, "*"); } catch (_) { }
+      /* ---------- pointer: pan / drag / resize ---------- */
+      board.addEventListener("pointerdown", (e) => {
+        if (e.target !== board && e.target !== grid && e.target !== world) return; // empty space only
+        selectCard(null); startPan(e);
+      });
+      function startPan(e) {
+        interaction = { type: "pan", sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y };
+        follow = false; board.classList.add("panning", "busy");
+        try { board.setPointerCapture(e.pointerId); } catch (_) { }
       }
-      function pushData(id, data) {
-        const p = panels.get(id);
-        if (!p) return;
-        if (p.ready && !p.iframe.hidden) postToPanel(p, data);
-        else p.queue.push(data); // queued until the iframe finishes loading
+      function startDrag(e, c) {
+        interaction = { type: "drag", card: c, sx: e.clientX, sy: e.clientY, ox: c.x, oy: c.y };
+        follow = false; board.classList.add("busy");
+        try { board.setPointerCapture(e.pointerId); } catch (_) { }
       }
+      function startResize(e, c) {
+        interaction = { type: "resize", card: c, sx: e.clientX, sy: e.clientY, ow: c.el.offsetWidth, oh: c.el.offsetHeight };
+        follow = false; board.classList.add("busy");
+        try { board.setPointerCapture(e.pointerId); } catch (_) { }
+      }
+      board.addEventListener("pointermove", (e) => {
+        if (!interaction) return;
+        if (interaction.type === "pan") {
+          cam.x = interaction.cx + (e.clientX - interaction.sx);
+          cam.y = interaction.cy + (e.clientY - interaction.sy);
+          setCamera();
+        } else if (interaction.type === "drag") {
+          const c = interaction.card;
+          c.x = interaction.ox + (e.clientX - interaction.sx) / cam.scale;
+          c.y = interaction.oy + (e.clientY - interaction.sy) / cam.scale;
+          setCardTransform(c);
+        } else if (interaction.type === "resize") {
+          const c = interaction.card;
+          c.w = Math.max(220, interaction.ow + (e.clientX - interaction.sx) / cam.scale);
+          c.h = Math.max(120, interaction.oh + (e.clientY - interaction.sy) / cam.scale);
+          c.autoSize = false; applyCardSize(c);
+      }
+    });
+      function endInteraction(e) {
+        if (!interaction) return;
+        const wasResize = interaction.type === "resize";
+        interaction = null; board.classList.remove("panning", "busy");
+        try { board.releasePointerCapture(e.pointerId); } catch (_) { }
+        if (wasResize) recomputeColumns();
+      }
+      board.addEventListener("pointerup", endInteraction);
+      board.addEventListener("pointercancel", endInteraction);
+      board.addEventListener("wheel", (e) => {
+        e.preventDefault(); follow = false;
+        if (e.ctrlKey || e.metaKey) zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY);
+        else { cam.x -= e.deltaX; cam.y -= e.deltaY; setCamera(); }
+      }, { passive: false });
 
-      function upsertPanel(value) {
-        if (!value || !value.id) return;
-        const isNew = !panels.has(value.id);
-        const p = ensurePanel(value.id);
-        if (value.title != null) p.title.textContent = value.title;
-        if (value.status != null) setStatus(p, value.status);
-        if (value.html != null) setHtml(p, value.html);
-        if (isNew && stick) requestAnimationFrame(scrollToBottom);
-      }
-      function focusPanel(id) {
-        const p = panels.get(id);
-        if (!p) return;
-        p.card.scrollIntoView({ behavior: "smooth", block: "center" });
-        p.card.classList.remove("flash"); void p.card.offsetWidth; p.card.classList.add("flash");
-      }
-      function clearCanvas() {
-        panels.clear();
-        panelsEl.innerHTML = "";
-        stick = true;
-        updateCount();
-      }
+      /* ---------- toolbar ---------- */
+      $("#zin").addEventListener("click", () => { const r = board.getBoundingClientRect(); zoomAt(1.2, r.left + r.width / 2, r.top + r.height / 2); });
+      $("#zout").addEventListener("click", () => { const r = board.getBoundingClientRect(); zoomAt(1 / 1.2, r.left + r.width / 2, r.top + r.height / 2); });
+      $("#fit").addEventListener("click", () => { follow = false; fitAll(true); });
+      $("#tidy").addEventListener("click", () => { follow = false; tidy(); });
 
-      // Panels report their content height here so we can auto-size their iframes.
+      /* ---------- auto-size: panels report their content height ---------- */
       window.addEventListener("message", (e) => {
         const m = e.data;
         if (!m || typeof m !== "object" || m.source !== "agui-internal" || m.type !== "height") return;
-        for (const p of panels.values()) {
-          if (p.iframe.contentWindow === e.source) {
-            const h = Math.max(64, Math.min(1200, Number(m.height) || 140));
-            p.iframe.style.height = h + "px";
-            if (stick) scrollToBottom();
-            break;
+      for (const c of cards.values()) {
+        if (c.iframe.contentWindow === e.source) {
+          if (c.autoSize) {
+            c.iframe.style.height = clamp(Number(m.height) || 140, 64, 1400) + "px";
+            recomputeColumns(); scheduleFollowFit();
           }
+          break;
+        }
       }
     });
 
-      /* ---------- AG-UI SSE handling ---------- *
-       * Events arrive as `data: {json}\n\n`. Field names are camelCase. */
+      /* ================= AG-UI SSE ================= */
       function handleEvent(ev, assistants) {
       evtEl.textContent = ev.type === "CUSTOM" && ev.name ? ev.name : ev.type;
       switch (ev.type) {
-        case "RUN_STARTED": pulse("life"); break;
+        case "RUN_STARTED": follow = true; pulse("life"); break;
 
         case "TEXT_MESSAGE_START": {
           const bubble = addMessage("assistant", "");
@@ -1145,10 +1354,10 @@
 
         case "CUSTOM":
           switch (ev.name) {
-            case "ui_panel": upsertPanel(ev.value); pulse("render"); break;
+            case "ui_panel": upsertCard(ev.value); pulse("render"); break;
             case "ui_push": pushData(ev.value && ev.value.id, ev.value && ev.value.data); pulse("render"); break;
-            case "ui_focus": focusPanel(ev.value && ev.value.id); pulse("tool"); break;
-            case "ui_clear": clearCanvas(); pulse("tool"); break;
+            case "ui_focus": focusCard(ev.value && ev.value.id); pulse("tool"); break;
+            case "ui_clear": clearBoard(); pulse("tool"); break;
             default: pulse("life");
           }
           break;
@@ -1220,6 +1429,8 @@
       inputEl.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
       sendBtn.addEventListener("click", () => send());
       document.querySelectorAll(".ex").forEach(b => b.addEventListener("click", () => send(b.textContent)));
+
+  setCamera();
       inputEl.focus();
     </script>
 </body>
