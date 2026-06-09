@@ -12,20 +12,14 @@ the frontend.
 Run with:  uvicorn app:app --reload --port 8000
 """
 
-from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic_ai.ui.ag_ui import AGUIAdapter
-
-if TYPE_CHECKING:
-    from starlette.requests import Request
-    from starlette.responses import Response
 
 from .agent import MODEL, agent
 

@@ -1,201 +1,863 @@
 <!doctype html>
 <html lang="en">
+
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>AG-UI · Generative UI Agent</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-<style>
-  /* ------------------------------------------------------------------ *
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AG-UI · Live Generative Canvas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
+  <style>
+    /* ------------------------------------------------------------------ *
    * Identity: a "control booth" — dark, quiet chrome around a lit stage.
-   * The agent's output is the lit thing (white canvas); the controls are
-   * the dark booth (chat rail + header). The signature is the event wire
-   * on the divider: a live track that fires a packet from booth -> stage
-   * each time an AG-UI event crosses it.
+   * The agent's output is the lit thing (a stack of white panels); the
+   * controls are the dark booth (chat rail + header). The signature is the
+   * event wire on the divider: a live track that fires a packet from booth ->
+   * stage each time an AG-UI event crosses it. The stage now BUILDS UP: panels
+   * appear and update as the agent works through a response step by step.
    * ------------------------------------------------------------------ */
-  :root {
-    --ink:#14161c;          /* app shell */
-    --panel:#191c24;        /* chat rail */
-    --panel-2:#1f232d;      /* raised surfaces (bubbles) */
-    --line:#2b3140;         /* hairlines */
-    --text:#e8eaf0;
-    --muted:#9aa3b4;
-    --faint:#6b7382;
+    :root {
+      --ink: #14161c;
+      --panel: #191c24;
+      --panel-2: #1f232d;
+      --line: #2b3140;
+      --text: #e8eaf0;
+      --muted: #9aa3b4;
+      --faint: #6b7382;
+      --accent: #7b78ff;
+      --accent-2: #34d0c4;
+      --warn: #ff6b5a;
+      --canvas-bg: #eef0f4;
+      --card: #ffffff;
+      --card-line: #e5e8ef;
+      --card-ink: #1b1e27;
+      --done: #129b7e;
+      --rail: 380px;
+      --bar: 54px;
+      --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
 
-    --accent:#7b78ff;       /* periwinkle — primary + tool events */
-    --accent-2:#34d0c4;     /* teal — render events / "it worked" */
-    --warn:#ff6b5a;
+    * {
+      box-sizing: border-box;
+    }
 
-    --canvas-bg:#eef0f4;    /* the lit stage */
-    --card:#ffffff;
-    --card-line:#e5e8ef;
-    --card-ink:#1b1e27;
+    /* The `hidden` attribute (toggled from JS) must beat any `display` rule below;
+     without this, `.empty`/`.p-skeleton` keep their `display:flex` and never hide. */
+    [hidden] {
+      display: none !important;
+    }
 
-    --rail:380px;
-    --bar:54px;
-    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
-  }
+    html,
+    body {
+      height: 100%;
+    }
 
-  * { box-sizing:border-box; }
-  html,body { height:100%; }
-  body {
-    margin:0;
-    font-family:"Inter",system-ui,sans-serif;
-    color:var(--text);
-    background:var(--ink);
-    -webkit-font-smoothing:antialiased;
-    overflow:hidden;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    * { animation-duration:.001ms !important; transition-duration:.001ms !important; }
-  }
+    body {
+      margin: 0;
+      font-family: "Inter", system-ui, sans-serif;
+      color: var(--text);
+      background: var(--ink);
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
 
-  /* ---------------- top bar ---------------- */
-  .topbar {
-    height:var(--bar);
-    display:flex; align-items:center; gap:14px;
-    padding:0 18px;
-    border-bottom:1px solid var(--line);
-    background:linear-gradient(180deg,#171a21,#14161c);
-  }
-  .brand { display:flex; align-items:center; gap:10px; font-family:"Space Grotesk",sans-serif; font-weight:700; letter-spacing:.2px; }
-  .brand .glyph {
-    width:22px; height:22px; border-radius:6px;
-    background:conic-gradient(from 200deg, var(--accent), var(--accent-2), var(--accent));
-    box-shadow:0 0 0 1px #ffffff14, 0 4px 14px #7b78ff44;
-  }
-  .brand small { font-family:var(--mono); font-weight:400; color:var(--faint); font-size:11px; letter-spacing:0; }
-  .spacer { flex:1; }
-  .pill {
-    font-family:var(--mono); font-size:11px; color:var(--muted);
-    border:1px solid var(--line); border-radius:999px; padding:5px 11px;
-    background:#ffffff08; white-space:nowrap;
-  }
-  .pill b { color:var(--text); font-weight:500; }
-  .status { display:flex; align-items:center; gap:7px; font-family:var(--mono); font-size:11px; color:var(--muted); }
-  .status .dot { width:8px; height:8px; border-radius:50%; background:var(--faint); transition:background .2s, box-shadow .2s; }
-  .status[data-state="ready"]     .dot { background:#3ecf8e; box-shadow:0 0 8px #3ecf8e88; }
-  .status[data-state="streaming"] .dot { background:var(--accent); box-shadow:0 0 9px var(--accent); animation:breathe 1s ease-in-out infinite; }
-  .status[data-state="error"]     .dot { background:var(--warn); box-shadow:0 0 9px var(--warn); }
-  @keyframes breathe { 0%,100%{opacity:1} 50%{opacity:.35} }
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        animation-duration: .001ms !important;
+        transition-duration: .001ms !important;
+      }
+    }
 
-  /* ---------------- workbench ---------------- */
-  .workbench { height:calc(100vh - var(--bar)); display:flex; }
+    /* top bar */
+    .topbar {
+      height: var(--bar);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #171a21, #14161c);
+    }
 
-  /* chat rail */
-  .chat { flex:0 0 var(--rail); min-width:300px; display:flex; flex-direction:column; background:var(--panel); border-right:1px solid var(--line); min-height:0; }
-  .chat-head { padding:14px 18px 8px; font-family:"Space Grotesk",sans-serif; font-weight:600; font-size:13px; color:var(--muted); letter-spacing:.4px; text-transform:uppercase; }
-  .messages { flex:1; overflow-y:auto; padding:6px 16px 18px; display:flex; flex-direction:column; gap:12px; scroll-behavior:smooth; }
-  .messages::-webkit-scrollbar { width:10px; }
-  .messages::-webkit-scrollbar-thumb { background:#ffffff14; border-radius:99px; border:3px solid var(--panel); }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: "Space Grotesk", sans-serif;
+      font-weight: 700;
+      letter-spacing: .2px;
+    }
 
-  .msg { display:flex; }
-  .msg.user { justify-content:flex-end; }
-  .bubble {
-    max-width:86%; padding:10px 13px; border-radius:14px; font-size:14px; line-height:1.5;
-    white-space:pre-wrap; word-wrap:break-word; overflow-wrap:anywhere;
-  }
-  .msg.assistant .bubble { background:var(--panel-2); border:1px solid var(--line); border-top-left-radius:5px; }
-  .msg.user .bubble { background:linear-gradient(180deg,#6f6cff,#5b58f0); color:#fff; border-top-right-radius:5px; box-shadow:0 6px 18px #5b58f033; }
-  .msg.error .bubble { background:#2a1d20; border:1px solid #5b2a28; color:#ffb4ab; font-size:13px; }
-  .bubble .caret { display:inline-block; width:7px; height:1.05em; vertical-align:-2px; margin-left:1px; background:var(--accent-2); animation:blink 1s steps(2) infinite; }
-  @keyframes blink { 50%{opacity:0} }
+    .brand .glyph {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      background: conic-gradient(from 200deg, var(--accent), var(--accent-2), var(--accent));
+      box-shadow: 0 0 0 1px #ffffff14, 0 4px 14px #7b78ff44;
+    }
 
-  .toolchip {
-    align-self:flex-start; display:inline-flex; align-items:center; gap:7px;
-    font-family:var(--mono); font-size:11.5px; color:var(--accent);
-    background:#7b78ff14; border:1px solid #7b78ff33; border-radius:8px; padding:5px 9px;
-  }
-  .toolchip .gear { animation:spin 2.4s linear infinite; display:inline-block; }
-  @keyframes spin { to{ transform:rotate(360deg) } }
-  .toolchip code { color:var(--text); }
+    .brand small {
+      font-family: var(--mono);
+      font-weight: 400;
+      color: var(--faint);
+      font-size: 11px;
+      letter-spacing: 0;
+    }
 
-  /* composer */
-  .composer { border-top:1px solid var(--line); padding:12px; background:#15181f; }
-  .composer .box { display:flex; gap:8px; align-items:flex-end; background:var(--panel-2); border:1px solid var(--line); border-radius:13px; padding:8px 8px 8px 12px; transition:border-color .15s, box-shadow .15s; }
-  .composer .box:focus-within { border-color:#5b58f0aa; box-shadow:0 0 0 3px #5b58f022; }
-  textarea {
-    flex:1; resize:none; border:0; outline:0; background:transparent; color:var(--text);
-    font-family:"Inter",sans-serif; font-size:14px; line-height:1.45; max-height:160px; padding:5px 0;
-  }
-  textarea::placeholder { color:var(--faint); }
-  .send {
-    flex:0 0 auto; border:0; cursor:pointer; width:38px; height:38px; border-radius:10px;
-    background:linear-gradient(180deg,#6f6cff,#5b58f0); color:#fff; display:grid; place-items:center;
-    transition:transform .12s, opacity .15s, filter .15s;
-  }
-  .send:hover { filter:brightness(1.08); }
-  .send:active { transform:scale(.93); }
-  .send:disabled { opacity:.4; cursor:default; filter:grayscale(.4); }
-  .send svg { width:18px; height:18px; }
-  .hint { margin:9px 2px 0; font-family:var(--mono); font-size:10.5px; color:var(--faint); }
+    .spacer {
+      flex: 1;
+    }
 
-  /* ---------------- event wire (signature) ---------------- */
-  .wire { position:relative; flex:0 0 16px; }
-  .wire .rail { position:absolute; top:0; bottom:0; left:50%; width:2px; transform:translateX(-50%); background:linear-gradient(180deg,#ffffff00,#ffffff10 12%,#ffffff10 88%,#ffffff00); }
-  .wire .glow { position:absolute; inset:0; background:radial-gradient(60% 18% at 50% 50%, #7b78ff00, transparent); opacity:0; }
-  .wire.hot .glow { animation:wireGlow .5s ease-out; }
-  @keyframes wireGlow { 0%{opacity:.0} 20%{opacity:.9; background:radial-gradient(60% 16% at 50% 40%, #7b78ff55, transparent)} 100%{opacity:0} }
-  .packet {
-    position:absolute; left:50%; top:-6px; width:7px; height:7px; border-radius:50%;
-    transform:translateX(-50%); pointer-events:none;
-    animation:travel .62s cubic-bezier(.4,0,.2,1) forwards;
-  }
-  .packet.tool   { background:var(--accent);   box-shadow:0 0 10px var(--accent); }
-  .packet.render { background:var(--accent-2); box-shadow:0 0 12px var(--accent-2); width:9px; height:9px; }
-  .packet.life   { background:#8b93a4; box-shadow:0 0 7px #8b93a4aa; }
-  @keyframes travel { from{ top:-6px; opacity:0 } 12%{opacity:1} 90%{opacity:1} to{ top:calc(100% + 4px); opacity:0 } }
+    .pill {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 5px 11px;
+      background: #ffffff08;
+      white-space: nowrap;
+    }
 
-  /* ---------------- canvas / stage ---------------- */
-  .canvas { flex:1; display:flex; flex-direction:column; background:var(--canvas-bg); min-width:0; }
-  .canvas-head {
-    height:42px; flex:0 0 auto; display:flex; align-items:center; gap:12px;
-    padding:0 16px; background:#e7eaf0; border-bottom:1px solid #d8dce6; color:var(--card-ink);
-  }
-  .canvas-head .dots { display:flex; gap:6px; }
-  .canvas-head .dots i { width:11px; height:11px; border-radius:50%; background:#cfd5e1; display:block; }
-  .canvas-head .title { font-family:"Space Grotesk",sans-serif; font-weight:600; font-size:13.5px; color:#2a2f3a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .canvas-head .evt { margin-left:auto; font-family:var(--mono); font-size:10.5px; color:#7a8295; background:#ffffff; border:1px solid #d8dce6; border-radius:6px; padding:3px 8px; white-space:nowrap; }
-  .canvas-head .srcbtn { font-family:var(--mono); font-size:11px; color:#5b6172; background:#fff; border:1px solid #d8dce6; border-radius:6px; padding:4px 9px; cursor:pointer; }
-  .canvas-head .srcbtn:hover { color:#2a2f3a; border-color:#b9c0cf; }
-  .canvas-head .srcbtn[aria-pressed="true"] { background:#2a2f3a; color:#fff; border-color:#2a2f3a; }
+    .pill b {
+      color: var(--text);
+      font-weight: 500;
+    }
 
-  .stage { position:relative; flex:1; padding:22px; min-height:0; }
-  .frame-wrap { position:absolute; inset:22px; border-radius:14px; overflow:hidden; background:var(--card); border:1px solid var(--card-line); box-shadow:0 18px 50px #1b203314, 0 2px 6px #1b203310; }
-  iframe { width:100%; height:100%; border:0; background:var(--card); display:block; }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+    }
 
-  .source { position:absolute; inset:22px; margin:0; border-radius:14px; overflow:auto; background:#0f1117; border:1px solid var(--line); color:#cdd3e1; padding:18px 20px; font-family:var(--mono); font-size:12.5px; line-height:1.6; tab-size:2; }
-  .source::-webkit-scrollbar { width:11px; height:11px; }
-  .source::-webkit-scrollbar-thumb { background:#ffffff1c; border-radius:99px; border:3px solid #0f1117; }
+    .status .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--faint);
+      transition: background .2s, box-shadow .2s;
+    }
 
-  /* empty state */
-  .empty { position:absolute; inset:22px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; border:1.5px dashed #cdd3e1; border-radius:14px; padding:24px; }
-  .empty .mark { width:46px; height:46px; border-radius:12px; background:conic-gradient(from 200deg, var(--accent), var(--accent-2), var(--accent)); opacity:.85; box-shadow:0 8px 24px #7b78ff33; margin-bottom:16px; }
-  .empty h2 { font-family:"Space Grotesk",sans-serif; font-weight:600; font-size:18px; color:#2a2f3a; margin:0 0 6px; }
-  .empty p { color:#6b7488; font-size:13.5px; margin:0 0 18px; max-width:380px; line-height:1.55; }
-  .examples { display:flex; flex-wrap:wrap; gap:9px; justify-content:center; max-width:540px; }
-  .ex { font-size:12.5px; color:#3a4150; background:#fff; border:1px solid #d8dce6; border-radius:999px; padding:8px 14px; cursor:pointer; transition:border-color .15s, transform .12s, box-shadow .15s; }
-  .ex:hover { border-color:var(--accent); color:#2a2f3a; box-shadow:0 6px 16px #7b78ff22; transform:translateY(-1px); }
+    .status[data-state="ready"] .dot {
+      background: #3ecf8e;
+      box-shadow: 0 0 8px #3ecf8e88;
+    }
 
-  /* ---------------- responsive: stack on narrow screens ---------------- */
-  @media (max-width: 880px) {
-    body { overflow:auto; }
-    .workbench { flex-direction:column; height:auto; }
-    .wire { display:none; }
-    .canvas { order:1; min-height:62vh; border-bottom:2px solid var(--accent); }
-    .chat { order:2; flex:1 1 auto; border-right:0; min-height:46vh; }
-    .frame-wrap, .empty, .source { position:relative; inset:auto; height:54vh; }
-    .stage { padding:16px; }
-  }
-</style>
+    .status[data-state="streaming"] .dot {
+      background: var(--accent);
+      box-shadow: 0 0 9px var(--accent);
+      animation: breathe 1s ease-in-out infinite;
+    }
+
+    .status[data-state="error"] .dot {
+      background: var(--warn);
+      box-shadow: 0 0 9px var(--warn);
+    }
+
+    @keyframes breathe {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: .35
+      }
+    }
+
+    /* workbench */
+    .workbench {
+      height: calc(100vh - var(--bar));
+      display: flex;
+    }
+
+    /* chat rail */
+    .chat {
+      flex: 0 0 var(--rail);
+      min-width: 300px;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+      min-height: 0;
+    }
+
+    .chat-head {
+      padding: 14px 18px 8px;
+      font-family: "Space Grotesk", sans-serif;
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--muted);
+      letter-spacing: .4px;
+      text-transform: uppercase;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      scroll-behavior: smooth;
+    }
+
+    .messages::-webkit-scrollbar {
+      width: 10px;
+    }
+
+    .messages::-webkit-scrollbar-thumb {
+      background: #ffffff14;
+      border-radius: 99px;
+      border: 3px solid var(--panel);
+    }
+
+    .msg {
+      display: flex;
+    }
+
+    .msg.user {
+      justify-content: flex-end;
+    }
+
+    .bubble {
+      max-width: 86%;
+      padding: 10px 13px;
+      border-radius: 14px;
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow-wrap: anywhere;
+    }
+
+    .msg.assistant .bubble {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-top-left-radius: 5px;
+    }
+
+    .msg.user .bubble {
+      background: linear-gradient(180deg, #6f6cff, #5b58f0);
+      color: #fff;
+      border-top-right-radius: 5px;
+      box-shadow: 0 6px 18px #5b58f033;
+    }
+
+    .msg.error .bubble {
+      background: #2a1d20;
+      border: 1px solid #5b2a28;
+      color: #ffb4ab;
+      font-size: 13px;
+    }
+
+    .toolchip {
+      align-self: flex-start;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--accent);
+      background: #7b78ff14;
+      border: 1px solid #7b78ff33;
+      border-radius: 8px;
+      padding: 5px 9px;
+    }
+
+    .toolchip .gear {
+      animation: spin 2.4s linear infinite;
+      display: inline-block;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg)
+      }
+    }
+
+    .toolchip code {
+      color: var(--text);
+    }
+
+    /* composer */
+    .composer {
+      border-top: 1px solid var(--line);
+      padding: 12px;
+      background: #15181f;
+    }
+
+    .composer .box {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      padding: 8px 8px 8px 12px;
+      transition: border-color .15s, box-shadow .15s;
+    }
+
+    .composer .box:focus-within {
+      border-color: #5b58f0aa;
+      box-shadow: 0 0 0 3px #5b58f022;
+    }
+
+    textarea {
+      flex: 1;
+      resize: none;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--text);
+      font-family: "Inter", sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+      max-height: 160px;
+      padding: 5px 0;
+    }
+
+    textarea::placeholder {
+      color: var(--faint);
+    }
+
+    .send {
+      flex: 0 0 auto;
+      border: 0;
+      cursor: pointer;
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(180deg, #6f6cff, #5b58f0);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      transition: transform .12s, opacity .15s, filter .15s;
+    }
+
+    .send:hover {
+      filter: brightness(1.08);
+    }
+
+    .send:active {
+      transform: scale(.93);
+    }
+
+    .send:disabled {
+      opacity: .4;
+      cursor: default;
+      filter: grayscale(.4);
+    }
+
+    .send svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .hint {
+      margin: 9px 2px 0;
+      font-family: var(--mono);
+      font-size: 10.5px;
+      color: var(--faint);
+    }
+
+    /* event wire (signature) */
+    .wire {
+      position: relative;
+      flex: 0 0 16px;
+    }
+
+    .wire .rail {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 2px;
+      transform: translateX(-50%);
+      background: linear-gradient(180deg, #ffffff00, #ffffff10 12%, #ffffff10 88%, #ffffff00);
+    }
+
+    .wire .glow {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+    }
+
+    .wire.hot .glow {
+      animation: wireGlow .5s ease-out;
+    }
+
+    @keyframes wireGlow {
+      0% {
+        opacity: 0
+      }
+
+      20% {
+        opacity: .9;
+        background: radial-gradient(60% 16% at 50% 40%, #7b78ff55, transparent)
+      }
+
+      100% {
+        opacity: 0
+      }
+    }
+
+    .packet {
+      position: absolute;
+      left: 50%;
+      top: -6px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      transform: translateX(-50%);
+      pointer-events: none;
+      animation: travel .62s cubic-bezier(.4, 0, .2, 1) forwards;
+    }
+
+    .packet.tool {
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent);
+    }
+
+    .packet.render {
+      background: var(--accent-2);
+      box-shadow: 0 0 12px var(--accent-2);
+      width: 9px;
+      height: 9px;
+    }
+
+    .packet.life {
+      background: #8b93a4;
+      box-shadow: 0 0 7px #8b93a4aa;
+    }
+
+    @keyframes travel {
+      from {
+        top: -6px;
+        opacity: 0
+      }
+
+      12% {
+        opacity: 1
+      }
+
+      90% {
+        opacity: 1
+      }
+
+      to {
+        top: calc(100% + 4px);
+        opacity: 0
+      }
+    }
+
+    /* canvas / stage */
+    .canvas {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--canvas-bg);
+      min-width: 0;
+    }
+
+    .canvas-head {
+      height: 42px;
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 16px;
+      background: #e7eaf0;
+      border-bottom: 1px solid #d8dce6;
+      color: var(--card-ink);
+    }
+
+    .canvas-head .dots {
+      display: flex;
+      gap: 6px;
+    }
+
+    .canvas-head .dots i {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #cfd5e1;
+      display: block;
+    }
+
+    .canvas-head .title {
+      font-family: "Space Grotesk", sans-serif;
+      font-weight: 600;
+      font-size: 13.5px;
+      color: #2a2f3a;
+    }
+
+    .canvas-head .count {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #7a8295;
+    }
+
+    .canvas-head .evt {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 10.5px;
+      color: #7a8295;
+      background: #fff;
+      border: 1px solid #d8dce6;
+      border-radius: 6px;
+      padding: 3px 8px;
+      white-space: nowrap;
+    }
+
+    .stage {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .panels {
+      position: absolute;
+      inset: 0;
+      overflow-y: auto;
+      padding: 20px 20px 40px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .panels::-webkit-scrollbar {
+      width: 11px;
+    }
+
+    .panels::-webkit-scrollbar-thumb {
+      background: #c4cad6;
+      border-radius: 99px;
+      border: 3px solid var(--canvas-bg);
+    }
+
+    .panel {
+      width: 100%;
+      max-width: 780px;
+      background: var(--card);
+      border: 1px solid var(--card-line);
+      border-radius: 14px;
+      box-shadow: 0 12px 36px #1b203312, 0 2px 5px #1b20330f;
+      overflow: hidden;
+      animation: panelIn .34s cubic-bezier(.2, .7, .3, 1) both;
+    }
+
+    @keyframes panelIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px) scale(.99)
+      }
+
+      to {
+        opacity: 1;
+        transform: none
+      }
+    }
+
+    .panel.flash {
+      animation: flash 1.1s ease;
+    }
+
+    @keyframes flash {
+      0% {
+        box-shadow: 0 0 0 0 #7b78ff00
+      }
+
+      18% {
+        box-shadow: 0 0 0 4px #7b78ff55
+      }
+
+      100% {
+        box-shadow: 0 12px 36px #1b203312
+      }
+    }
+
+    .panel[data-status="active"] {
+      border-color: #7b78ff55;
+    }
+
+    .panel[data-status="done"] {
+      border-color: #1fbf9c44;
+    }
+
+    .panel[data-status="error"] {
+      border-color: #ff6b5a55;
+    }
+
+    .p-head {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 9px 11px;
+      border-bottom: 1px solid var(--card-line);
+      background: #fafbfd;
+    }
+
+    .p-badge {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      font-weight: 700;
+      background: #e3e6ee;
+      color: #8a92a3;
+    }
+
+    .panel[data-status="active"] .p-badge {
+      background: #5b58f0;
+      color: #fff;
+      animation: breathe 1.1s ease-in-out infinite;
+    }
+
+    .panel[data-status="done"] .p-badge {
+      background: #daf5ee;
+      color: var(--done);
+    }
+
+    .panel[data-status="error"] .p-badge {
+      background: #ffe3df;
+      color: #d6453a;
+    }
+
+    .p-title {
+      flex: 1;
+      font-family: "Space Grotesk", sans-serif;
+      font-weight: 600;
+      font-size: 13px;
+      color: #2a2f3a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .p-src {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #7a8295;
+      background: #fff;
+      border: 1px solid #d8dce6;
+      border-radius: 6px;
+      padding: 3px 8px;
+      cursor: pointer;
+    }
+
+    .p-src:hover {
+      color: #2a2f3a;
+      border-color: #b9c0cf;
+    }
+
+    .p-src[aria-pressed="true"] {
+      background: #2a2f3a;
+      color: #fff;
+      border-color: #2a2f3a;
+    }
+
+    .p-body {
+      position: relative;
+    }
+
+    .p-body iframe {
+      width: 100%;
+      height: 140px;
+      border: 0;
+      display: block;
+      background: #fff;
+      transition: height .22s ease;
+    }
+
+    .p-body iframe[hidden] {
+      display: none;
+    }
+
+    .p-skeleton {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      padding: 18px;
+    }
+
+    .p-skeleton span {
+      height: 11px;
+      border-radius: 6px;
+      background: linear-gradient(90deg, #eef0f4 25%, #e1e5ec 37%, #eef0f4 63%);
+      background-size: 400% 100%;
+      animation: shimmer 1.4s infinite;
+    }
+
+    .p-skeleton span:nth-child(1) {
+      width: 62%
+    }
+
+    .p-skeleton span:nth-child(2) {
+      width: 90%
+    }
+
+    .p-skeleton span:nth-child(3) {
+      width: 48%
+    }
+
+    @keyframes shimmer {
+      0% {
+        background-position: 100% 0
+      }
+
+      100% {
+        background-position: 0 0
+      }
+    }
+
+    .p-source {
+      margin: 0;
+      max-height: 420px;
+      overflow: auto;
+      background: #0f1117;
+      color: #cdd3e1;
+      padding: 16px 18px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.6;
+      tab-size: 2;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .p-source::-webkit-scrollbar {
+      width: 10px;
+    }
+
+    .p-source::-webkit-scrollbar-thumb {
+      background: #ffffff1c;
+      border-radius: 99px;
+      border: 3px solid #0f1117;
+    }
+
+    /* empty state */
+    .empty {
+      position: absolute;
+      inset: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      border: 1.5px dashed #cdd3e1;
+      border-radius: 14px;
+      padding: 24px;
+      pointer-events: none;
+    }
+
+    .empty .inner {
+      pointer-events: auto;
+    }
+
+    .empty .mark {
+      width: 46px;
+      height: 46px;
+      border-radius: 12px;
+      background: conic-gradient(from 200deg, var(--accent), var(--accent-2), var(--accent));
+      opacity: .85;
+      box-shadow: 0 8px 24px #7b78ff33;
+      margin: 0 auto 16px;
+    }
+
+    .empty h2 {
+      font-family: "Space Grotesk", sans-serif;
+      font-weight: 600;
+      font-size: 18px;
+      color: #2a2f3a;
+      margin: 0 0 6px;
+    }
+
+    .empty p {
+      color: #6b7488;
+      font-size: 13.5px;
+      margin: 0 0 18px;
+      max-width: 400px;
+      line-height: 1.55;
+    }
+
+    .examples {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      justify-content: center;
+      max-width: 560px;
+    }
+
+    .ex {
+      font-size: 12.5px;
+      color: #3a4150;
+      background: #fff;
+      border: 1px solid #d8dce6;
+      border-radius: 999px;
+      padding: 8px 14px;
+      cursor: pointer;
+      transition: border-color .15s, transform .12s, box-shadow .15s;
+    }
+
+    .ex:hover {
+      border-color: var(--accent);
+      color: #2a2f3a;
+      box-shadow: 0 6px 16px #7b78ff22;
+      transform: translateY(-1px);
+    }
+
+    /* responsive: stack on narrow screens */
+    @media (max-width: 880px) {
+      body {
+        overflow: auto;
+      }
+
+      .workbench {
+        flex-direction: column;
+        height: auto;
+      }
+
+      .wire {
+        display: none;
+      }
+
+      .canvas {
+        order: 1;
+        min-height: 64vh;
+        border-bottom: 2px solid var(--accent);
+      }
+
+      .chat {
+        order: 2;
+        flex: 1 1 auto;
+        border-right: 0;
+        min-height: 46vh;
+      }
+
+      .stage {
+        min-height: 60vh;
+      }
+    }
+  </style>
 </head>
+
 <body>
   <header class="topbar">
     <div class="brand">
       <span class="glyph" aria-hidden="true"></span>
-      <span>Generative UI Agent <small>· ag-ui</small></span>
+      <span>Live Generative Canvas <small>· ag-ui</small></span>
     </div>
     <span class="spacer"></span>
     <span class="pill">model <b id="model">…</b></span>
@@ -203,306 +865,363 @@
   </header>
 
   <main class="workbench">
-    <!-- chat rail -->
     <section class="chat">
       <div class="chat-head">Conversation</div>
       <div class="messages" id="messages" aria-live="polite"></div>
       <div class="composer">
         <div class="box">
-          <textarea id="input" rows="1" placeholder="Ask the agent to build or show something…"></textarea>
+          <textarea id="input" rows="1" placeholder="Ask the agent to walk you through something…"></textarea>
           <button class="send" id="send" title="Send (Enter)" aria-label="Send">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M5 12h13M13 6l6 6-6 6" />
+            </svg>
           </button>
         </div>
         <div class="hint">Enter to send · Shift+Enter for a new line</div>
       </div>
     </section>
 
-    <!-- event wire: the signature -->
-    <div class="wire" id="wire" aria-hidden="true"><div class="rail"></div><div class="glow"></div></div>
+    <div class="wire" id="wire" aria-hidden="true">
+      <div class="rail"></div>
+      <div class="glow"></div>
+    </div>
 
-    <!-- generative canvas -->
     <section class="canvas">
       <div class="canvas-head">
         <span class="dots"><i></i><i></i><i></i></span>
-        <span class="title" id="canvasTitle">Generative UI</span>
+        <span class="title">Canvas</span>
+        <span class="count" id="count"></span>
         <span class="evt" id="evt">idle</span>
-        <button class="srcbtn" id="srcBtn" aria-pressed="false" hidden>&lt;/&gt; source</button>
       </div>
       <div class="stage">
+        <div class="panels" id="panels"></div>
         <div class="empty" id="empty">
-          <div class="mark" aria-hidden="true"></div>
-          <h2>The agent paints here</h2>
-          <p>Ask for a chart, a calculator, a diagram, a dashboard — anything. The agent writes HTML and streams it into this panel over AG-UI.</p>
-          <div class="examples" id="examples">
-            <button class="ex">Bar chart of the planets by number of moons</button>
-            <button class="ex">A tip calculator I can actually use</button>
-            <button class="ex">Diagram a RAG pipeline: ingest → chunk → embed → retrieve → generate</button>
-            <button class="ex">A 3-column kanban board with a few sample cards</button>
-          </div>
+          <div class="inner">
+            <div class="mark" aria-hidden="true"></div>
+            <h2>The agent builds here, step by step</h2>
+            <p>Ask for something with a few moving parts. The agent narrates on the left and assembles panels here as it
+              goes — charts, diagrams, dashboards, live data.</p>
+            <div class="examples" id="examples">
+              <button class="ex">Walk me through how RAG works, one diagram panel per stage</button>
+              <button class="ex">Compare 3 vector databases — a panel each, then a summary</button>
+              <button class="ex">Simulate a model training run and stream the loss curve live</button>
+              <button class="ex">Build a dashboard: a metric card, a bar chart, then a data table</button>
+            </div>
+            </div>
         </div>
-        <div class="frame-wrap" id="frameWrap" hidden>
-          <iframe id="frame" sandbox="allow-scripts" title="Generative UI output"></iframe>
-        </div>
-        <pre class="source" id="source" hidden></pre>
       </div>
     </section>
   </main>
 
-<script>
-"use strict";
+  <script>
+    "use strict";
 
-const $ = (s) => document.querySelector(s);
-const messagesEl = $("#messages");
-const inputEl = $("#input");
-const sendBtn = $("#send");
-const frame = $("#frame");
-const frameWrap = $("#frameWrap");
-const emptyEl = $("#empty");
-const sourceEl = $("#source");
-const srcBtn = $("#srcBtn");
-const evtEl = $("#evt");
-const wire = $("#wire");
-const canvasTitle = $("#canvasTitle");
-const statusEl = $("#status");
-const statusText = $("#statusText");
+      const $ = (s) => document.querySelector(s);
+      const messagesEl = $("#messages");
+      const inputEl = $("#input");
+      const sendBtn = $("#send");
+      const panelsEl = $("#panels");
+      const emptyEl = $("#empty");
+      const evtEl = $("#evt");
+      const wire = $("#wire");
+      const countEl = $("#count");
+      const statusEl = $("#status");
+      const statusText = $("#statusText");
 
-const uid = () => (crypto.randomUUID ? crypto.randomUUID()
-  : "id-" + Math.random().toString(16).slice(2) + Date.now().toString(16));
+      const uid = () => (crypto.randomUUID ? crypto.randomUUID()
+        : "id-" + Math.random().toString(16).slice(2) + Date.now().toString(16));
 
-const threadId = uid();   // stable for this browser session
-let history = [];          // AG-UI Message[] sent each turn (user + assistant text)
-let streaming = false;
-let lastHtml = "";         // for the source viewer
+      const threadId = uid();
+      let history = [];
+      let streaming = false;
 
-/* ---------- which model is running ---------- */
-fetch("/config").then(r => r.json()).then(c => { $("#model").textContent = c.model || "unknown"; })
-  .catch(() => { $("#model").textContent = "unknown"; });
+        // UI tools build the canvas directly, so they don't need chat chips.
+        const UI_TOOLS = new Set(["add_or_update_panel", "push_panel_data", "focus_panel", "clear_canvas"]);
 
-/* ---------- status + streaming lock ---------- */
-function setStreaming(on) {
-  streaming = on;
-  sendBtn.disabled = on;
-  inputEl.disabled = on;
-  statusEl.dataset.state = on ? "streaming" : "ready";
-  statusText.textContent = on ? "streaming" : "ready";
-  if (!on) inputEl.focus();
-}
-function setError(msg) {
-  addMessage("error", msg);
-  statusEl.dataset.state = "error";
-  statusText.textContent = "error";
-  evtEl.textContent = "error";
-  streaming = false;
-  sendBtn.disabled = false;
-  inputEl.disabled = false;
-}
+        // Appended to every panel's HTML: reports content height to the host so panels
+        // auto-size, and posts under a private source so it never clashes with the
+        // agent's own 'agui' data messages.
+        const AUTOHEIGHT = '\n<script>(function(){function r(){var h=Math.max(document.body?document.body.scrollHeight:0,document.documentElement?document.documentElement.scrollHeight:0);parent.postMessage({source:"agui-internal",type:"height",height:h},"*");}window.addEventListener("load",r);window.addEventListener("resize",r);try{if(window.ResizeObserver&&document.body){new ResizeObserver(r).observe(document.body);}}catch(e){}setTimeout(r,60);setTimeout(r,300);setTimeout(r,1000);})();<\/script>';
 
-/* ---------- chat rendering ---------- */
-function scrollDown() { messagesEl.scrollTop = messagesEl.scrollHeight; }
+      /* ---------- model badge ---------- */
+      fetch("/config").then(r => r.json()).then(c => { $("#model").textContent = c.model || "unknown"; })
+        .catch(() => { $("#model").textContent = "unknown"; });
 
-function addMessage(role, text) {
-  const wrap = document.createElement("div");
-  wrap.className = "msg " + role;
-  const b = document.createElement("div");
-  b.className = "bubble";
-  b.textContent = text || "";
-  wrap.appendChild(b);
-  messagesEl.appendChild(wrap);
-  scrollDown();
-  return b; // return the bubble for streaming updates
-}
-function addToolChip(name) {
-  const el = document.createElement("div");
-  el.className = "toolchip";
-  const g = document.createElement("span"); g.className = "gear"; g.textContent = "\u2699";
-  const code = document.createElement("code"); code.textContent = name;
-  el.append(g, document.createTextNode(" "), code);
-  messagesEl.appendChild(el);
-  scrollDown();
-}
-
-/* ---------- the event wire (signature) ---------- */
-let lastPacket = 0;
-function pulse(kind) {
-  // restart the divider glow
-  wire.classList.remove("hot"); void wire.offsetWidth; wire.classList.add("hot");
-  // text deltas are frequent — don't spawn a packet for every one
-  const now = performance.now();
-  if (kind === "text" && now - lastPacket < 120) return;
-  lastPacket = now;
-  const dot = document.createElement("span");
-  dot.className = "packet " + (kind === "text" ? "life" : kind);
-  wire.appendChild(dot);
-  dot.addEventListener("animationend", () => dot.remove());
-}
-
-/* ---------- generative canvas ---------- */
-function renderToCanvas(value) {
-  const html = (value && value.html) || "";
-  const title = (value && value.title) || "Generative UI";
-  lastHtml = html;
-  canvasTitle.textContent = title;
-  emptyEl.hidden = true;
-  frameWrap.hidden = false;
-  frame.srcdoc = html;          // sandboxed iframe; isolated from this page
-  srcBtn.hidden = false;
-  setSource(false);             // default back to the rendered view
-}
-function setSource(on) {
-  srcBtn.setAttribute("aria-pressed", on ? "true" : "false");
-  sourceEl.hidden = !on;
-  frameWrap.hidden = on;
-  if (on) sourceEl.textContent = lastHtml;
-}
-srcBtn.addEventListener("click", () => setSource(sourceEl.hidden));
-
-/* ---------- AG-UI SSE parsing ---------- *
- * Events arrive as `data: {json}\n\n`. We buffer the stream, split on the
- * blank-line delimiter, collect the data lines of each block, and parse JSON.
- * Field names on the wire are camelCase (messageId, delta, toolCallName, ...). */
-function handleEvent(ev, assistants) {
-  evtEl.textContent = ev.type;
-  switch (ev.type) {
-    case "RUN_STARTED":
-      pulse("life"); break;
-
-    case "TEXT_MESSAGE_START": {
-      const bubble = addMessage("assistant", "");
-      assistants.set(ev.messageId, { bubble, text: "" });
-      pulse("life"); break;
+      /* ---------- status ---------- */
+      function setStreaming(on) {
+        streaming = on;
+            sendBtn.disabled = on; inputEl.disabled = on;
+            statusEl.dataset.state = on ? "streaming" : "ready";
+            statusText.textContent = on ? "streaming" : "ready";
+            if (!on) inputEl.focus();
+          }
+          function setError(msg) {
+            addMessage("error", msg);
+      statusEl.dataset.state = "error"; statusText.textContent = "error"; evtEl.textContent = "error";
+      streaming = false; sendBtn.disabled = false; inputEl.disabled = false;
     }
-    case "TEXT_MESSAGE_CONTENT":
-    case "TEXT_MESSAGE_CHUNK": {
-      const id = ev.messageId || "_default";
-      let a = assistants.get(id);
-      if (!a) { a = { bubble: addMessage("assistant", ""), text: "" }; assistants.set(id, a); }
-      if (ev.delta) {
-        a.text += ev.delta;
-        a.bubble.textContent = a.text;
-        scrollDown();
+
+      /* ---------- chat ---------- */
+      function scrollChat() { messagesEl.scrollTop = messagesEl.scrollHeight; }
+      function addMessage(role, text) {
+            const wrap = document.createElement("div"); wrap.className = "msg " + role;
+            const b = document.createElement("div"); b.className = "bubble"; b.textContent = text || "";
+            wrap.appendChild(b); messagesEl.appendChild(wrap); scrollChat();
+            return b;
+          }
+          function addToolChip(name) {
+      const el = document.createElement("div"); el.className = "toolchip";
+      const g = document.createElement("span"); g.className = "gear"; g.textContent = "\u2699";
+      const code = document.createElement("code"); code.textContent = name;
+      el.append(g, document.createTextNode(" "), code); messagesEl.appendChild(el); scrollChat();
+    }
+
+      /* ---------- event wire ---------- */
+      let lastPacket = 0;
+      function pulse(kind) {
+      wire.classList.remove("hot"); void wire.offsetWidth; wire.classList.add("hot");
+      const now = performance.now();
+      if (kind === "text" && now - lastPacket < 120) return;
+      lastPacket = now;
+      const dot = document.createElement("span");
+      dot.className = "packet " + (kind === "text" ? "life" : kind);
+      wire.appendChild(dot);
+      dot.addEventListener("animationend", () => dot.remove());
+    }
+
+      /* ---------- the live canvas: a map of panels ---------- */
+      const panels = new Map(); // id -> { card, iframe, skeleton, source, srcBtn, badge, title, html, ready, queue }
+      let stick = true;
+
+      panelsEl.addEventListener("scroll", () => {
+        stick = panelsEl.scrollHeight - panelsEl.scrollTop - panelsEl.clientHeight < 140;
+      });
+      function scrollToBottom() { panelsEl.scrollTop = panelsEl.scrollHeight; }
+      function updateCount() {
+        const n = panels.size;
+        countEl.textContent = n ? "· " + n + " panel" + (n === 1 ? "" : "s") : "";
+        emptyEl.hidden = n > 0;
       }
-      pulse("text"); break;
-    }
-    case "TEXT_MESSAGE_END":
-      pulse("life"); break;
 
-    case "TOOL_CALL_START":
-      addToolChip(ev.toolCallName || "tool");
-      pulse("tool"); break;
-    case "TOOL_CALL_ARGS":
-    case "TOOL_CALL_END":
-    case "TOOL_CALL_RESULT":
-      pulse("tool"); break;
+      function ensurePanel(id) {
+        let p = panels.get(id);
+        if (p) return p;
 
-    case "CUSTOM":
-      if (ev.name === "render_ui") { renderToCanvas(ev.value); pulse("render"); }
-      else { pulse("life"); }
-      break;
+        const card = document.createElement("article"); card.className = "panel"; card.dataset.status = "info";
+        const head = document.createElement("div"); head.className = "p-head";
+        const badge = document.createElement("span"); badge.className = "p-badge";
+        const title = document.createElement("span"); title.className = "p-title"; title.textContent = id;
+        const srcBtn = document.createElement("button"); srcBtn.className = "p-src"; srcBtn.textContent = "</>"; srcBtn.setAttribute("aria-pressed", "false"); srcBtn.hidden = true;
+        head.append(badge, title, srcBtn);
 
-    case "RUN_FINISHED":
-      pulse("life"); break;
-    case "RUN_ERROR":
-      setError(ev.message || "The agent reported an error.");
-      break;
+        const body = document.createElement("div"); body.className = "p-body";
+        const skeleton = document.createElement("div"); skeleton.className = "p-skeleton";
+        skeleton.append(document.createElement("span"), document.createElement("span"), document.createElement("span"));
+        const iframe = document.createElement("iframe");
+        iframe.setAttribute("sandbox", "allow-scripts");
+        iframe.setAttribute("title", "Panel: " + id);
+        iframe.hidden = true;
+        const source = document.createElement("pre"); source.className = "p-source"; source.hidden = true;
+        body.append(skeleton, iframe, source);
 
-    default:
-      break; // STATE_*, ACTIVITY_*, REASONING_*, RAW, ... ignored for this demo
-  }
-}
+        card.append(head, body);
 
-async function send(text) {
-  if (streaming) return;
-  text = (text != null ? text : inputEl.value).trim();
-  if (!text) return;
+        p = { card, iframe, skeleton, source, srcBtn, badge, title, html: "", ready: false, queue: [] };
+        iframe.addEventListener("load", () => { p.ready = true; flushQueue(p); });
+        srcBtn.addEventListener("click", () => toggleSource(p));
 
-  inputEl.value = "";
-  autoGrow();
-  addMessage("user", text);
-  history.push({ id: uid(), role: "user", content: text });
-  setStreaming(true);
-  evtEl.textContent = "connecting…";
+        panels.set(id, p);
+        panelsEl.appendChild(card);
+        updateCount();
+        return p;
+      }
 
-  const runInput = {
-    threadId,
-    runId: uid(),
-    state: {},
-    messages: history,
-    tools: [],
-    context: [],
-    forwardedProps: {}
-  };
+      function setStatus(p, status) {
+        const s = status || "info";
+        p.card.dataset.status = s;
+        p.badge.textContent = s === "done" ? "\u2713" : s === "error" ? "!" : "";
+      }
+      function setHtml(p, html) {
+        p.html = html;
+        p.ready = false;
+        p.skeleton.hidden = true;
+        p.srcBtn.hidden = false;
+        if (p.source.hidden === false) { // currently showing source -> refresh it
+          p.source.textContent = html;
+        } else {
+          p.iframe.hidden = false;
+          p.iframe.srcdoc = html + AUTOHEIGHT; // sandboxed; auto-height reporter appended
+        }
+      }
+      function toggleSource(p) {
+        const show = p.source.hidden;
+        p.srcBtn.setAttribute("aria-pressed", show ? "true" : "false");
+        if (show) {
+          p.source.textContent = p.html || "(no content yet)";
+          p.source.hidden = false; p.iframe.hidden = true; p.skeleton.hidden = true;
+        } else {
+          p.source.hidden = true;
+          if (p.html) { p.iframe.hidden = false; } else { p.skeleton.hidden = false; }
+        }
+      }
 
-  let res;
-  try {
-    res = await fetch("/agent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
-      body: JSON.stringify(runInput)
+      function flushQueue(p) { while (p.queue.length) postToPanel(p, p.queue.shift()); }
+      function postToPanel(p, data) {
+        try { p.iframe.contentWindow.postMessage({ source: "agui", type: "data", data: data }, "*"); } catch (_) { }
+      }
+      function pushData(id, data) {
+        const p = panels.get(id);
+        if (!p) return;
+        if (p.ready && !p.iframe.hidden) postToPanel(p, data);
+        else p.queue.push(data); // queued until the iframe finishes loading
+      }
+
+      function upsertPanel(value) {
+        if (!value || !value.id) return;
+        const isNew = !panels.has(value.id);
+        const p = ensurePanel(value.id);
+        if (value.title != null) p.title.textContent = value.title;
+        if (value.status != null) setStatus(p, value.status);
+        if (value.html != null) setHtml(p, value.html);
+        if (isNew && stick) requestAnimationFrame(scrollToBottom);
+      }
+      function focusPanel(id) {
+        const p = panels.get(id);
+        if (!p) return;
+        p.card.scrollIntoView({ behavior: "smooth", block: "center" });
+        p.card.classList.remove("flash"); void p.card.offsetWidth; p.card.classList.add("flash");
+      }
+      function clearCanvas() {
+        panels.clear();
+        panelsEl.innerHTML = "";
+        stick = true;
+        updateCount();
+      }
+
+      // Panels report their content height here so we can auto-size their iframes.
+      window.addEventListener("message", (e) => {
+        const m = e.data;
+        if (!m || typeof m !== "object" || m.source !== "agui-internal" || m.type !== "height") return;
+        for (const p of panels.values()) {
+          if (p.iframe.contentWindow === e.source) {
+            const h = Math.max(64, Math.min(1200, Number(m.height) || 140));
+            p.iframe.style.height = h + "px";
+            if (stick) scrollToBottom();
+            break;
+          }
+      }
     });
-  } catch (e) {
-    setError("Couldn't reach the agent server. Is it running on this port?");
-    return;
-  }
-  if (!res.ok || !res.body) {
-    let detail = "";
-    try { detail = " — " + (await res.text()).slice(0, 200); } catch (_) {}
-    setError("Agent server returned " + res.status + detail);
-    return;
-  }
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  const assistants = new Map(); // messageId -> { bubble, text }
-  let buf = "";
+      /* ---------- AG-UI SSE handling ---------- *
+       * Events arrive as `data: {json}\n\n`. Field names are camelCase. */
+      function handleEvent(ev, assistants) {
+      evtEl.textContent = ev.type === "CUSTOM" && ev.name ? ev.name : ev.type;
+      switch (ev.type) {
+        case "RUN_STARTED": pulse("life"); break;
 
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      let i;
-      while ((i = buf.indexOf("\n\n")) >= 0) {
-        const block = buf.slice(0, i);
-        buf = buf.slice(i + 2);
-        const data = block.split("\n")
-          .filter(l => l.startsWith("data:"))
-          .map(l => l.slice(5).trim())
-          .join("");
-        if (!data) continue;
-        let ev;
-        try { ev = JSON.parse(data); } catch (_) { continue; }
-        handleEvent(ev, assistants);
+        case "TEXT_MESSAGE_START": {
+          const bubble = addMessage("assistant", "");
+          assistants.set(ev.messageId, { bubble, text: "" });
+          pulse("life"); break;
+        }
+        case "TEXT_MESSAGE_CONTENT":
+        case "TEXT_MESSAGE_CHUNK": {
+          const id = ev.messageId || "_default";
+          let a = assistants.get(id);
+          if (!a) { a = { bubble: addMessage("assistant", ""), text: "" }; assistants.set(id, a); }
+          if (ev.delta) { a.text += ev.delta; a.bubble.textContent = a.text; scrollChat(); }
+          pulse("text"); break;
+        }
+        case "TEXT_MESSAGE_END": pulse("life"); break;
+
+        case "TOOL_CALL_START":
+          if (!UI_TOOLS.has(ev.toolCallName)) addToolChip(ev.toolCallName || "tool");
+          pulse("tool"); break;
+        case "TOOL_CALL_ARGS":
+        case "TOOL_CALL_END":
+        case "TOOL_CALL_RESULT":
+          pulse("tool"); break;
+
+        case "CUSTOM":
+          switch (ev.name) {
+            case "ui_panel": upsertPanel(ev.value); pulse("render"); break;
+            case "ui_push": pushData(ev.value && ev.value.id, ev.value && ev.value.data); pulse("render"); break;
+            case "ui_focus": focusPanel(ev.value && ev.value.id); pulse("tool"); break;
+            case "ui_clear": clearCanvas(); pulse("tool"); break;
+            default: pulse("life");
+          }
+          break;
+
+        case "RUN_FINISHED": pulse("life"); break;
+        case "RUN_ERROR": setError(ev.message || "The agent reported an error."); break;
+        default: break;
       }
     }
-  } catch (e) {
-    setError("Lost connection to the event stream.");
-    return;
-  }
 
-  // Persist assistant text into history so the next turn has context.
-  let combined = "";
-  for (const a of assistants.values()) {
-    if (a.text) combined += (combined ? "\n\n" : "") + a.text;
-  }
-  if (combined.trim()) history.push({ id: uid(), role: "assistant", content: combined });
+      async function send(text) {
+        if (streaming) return;
+        text = (text != null ? text : inputEl.value).trim();
+        if (!text) return;
 
-  if (statusEl.dataset.state !== "error") { setStreaming(false); evtEl.textContent = "idle"; }
-}
+      inputEl.value = ""; autoGrow();
+      addMessage("user", text);
+      history.push({ id: uid(), role: "user", content: text });
+      setStreaming(true);
+      evtEl.textContent = "connecting…";
 
-/* ---------- composer wiring ---------- */
-function autoGrow() {
-  inputEl.style.height = "auto";
-  inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + "px";
-}
-inputEl.addEventListener("input", autoGrow);
-inputEl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
-});
-sendBtn.addEventListener("click", () => send());
-document.querySelectorAll(".ex").forEach(b => b.addEventListener("click", () => send(b.textContent)));
+      const runInput = { threadId, runId: uid(), state: {}, messages: history, tools: [], context: [], forwardedProps: {} };
 
-inputEl.focus();
-</script>
+      let res;
+      try {
+        res = await fetch("/agent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+          body: JSON.stringify(runInput)
+        });
+      } catch (e) { setError("Couldn't reach the agent server. Is it running on this port?"); return; }
+      if (!res.ok || !res.body) {
+        let detail = "";
+        try { detail = " — " + (await res.text()).slice(0, 200); } catch (_) { }
+        setError("Agent server returned " + res.status + detail); return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      const assistants = new Map();
+      let buf = "";
+
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let i;
+          while ((i = buf.indexOf("\n\n")) >= 0) {
+            const block = buf.slice(0, i); buf = buf.slice(i + 2);
+            const data = block.split("\n").filter(l => l.startsWith("data:")).map(l => l.slice(5).trim()).join("");
+            if (!data) continue;
+            let ev; try { ev = JSON.parse(data); } catch (_) { continue; }
+            handleEvent(ev, assistants);
+          }
+        }
+      } catch (e) { setError("Lost connection to the event stream."); return; }
+
+      let combined = "";
+      for (const a of assistants.values()) if (a.text) combined += (combined ? "\n\n" : "") + a.text;
+      if (combined.trim()) history.push({ id: uid(), role: "assistant", content: combined });
+
+      if (statusEl.dataset.state !== "error") { setStreaming(false); evtEl.textContent = "idle"; }
+    }
+
+      /* ---------- composer ---------- */
+      function autoGrow() { inputEl.style.height = "auto"; inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + "px"; }
+      inputEl.addEventListener("input", autoGrow);
+      inputEl.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
+      sendBtn.addEventListener("click", () => send());
+      document.querySelectorAll(".ex").forEach(b => b.addEventListener("click", () => send(b.textContent)));
+      inputEl.focus();
+    </script>
 </body>
+
 </html>

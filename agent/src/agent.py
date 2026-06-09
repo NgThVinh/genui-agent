@@ -1,21 +1,28 @@
 """
-Agent core: a Pydantic AI agent whose one special ability is painting live HTML
-into a "generative UI" panel on the user's screen.
+Agent core: a Pydantic AI agent that drives a live, multi-step "Canvas" on the
+user's screen — a visual workspace it builds up panel-by-panel as it works,
+rather than a single static render.
 
-The mechanism is the AG-UI `CUSTOM` event. A normal Pydantic AI tool returns a
-`ToolReturn` whose `metadata` carries one or more AG-UI `BaseEvent`s; Pydantic
-AI's AG-UI adapter detects those and streams them to the frontend as part of the
-same SSE event stream as the chat text. The frontend listens for our custom
-event (name = "render_ui") and drops the HTML into a sandboxed iframe.
+Mechanism (unchanged in spirit, richer in vocabulary): each UI tool returns a
+`ToolReturn` whose `metadata` carries an AG-UI `CustomEvent`. Pydantic AI's
+AG-UI adapter streams those events to the frontend as they happen during a run.
+Because the model can call these tools repeatedly across the steps of a single
+response, the panels appear and update in real time.
 
-This module is the importable "core" — it knows nothing about HTTP. The thin
-FastAPI/AG-UI transport layer lives in `app.py`.
+UI custom events emitted here (the frontend matches on `name`):
+  - ui_panel : {id, title?, html?, status?}   upsert a panel (add or update)
+  - ui_push  : {id, data}                      stream live data into a panel
+  - ui_focus : {id}                            scroll to / highlight a panel
+  - ui_clear : {}                              reset the whole canvas
+
+This module is the importable core; the FastAPI/AG-UI transport lives in app.py.
 """
 
 from __future__ import annotations
 
 import os
 from textwrap import dedent
+from typing import Any, Literal
 
 from ag_ui.core import CustomEvent, EventType
 from dotenv import load_dotenv
@@ -24,49 +31,81 @@ from pydantic_ai import Agent, ToolReturn
 # Load .env BEFORE the model string is read, since the Agent is built at import.
 load_dotenv()
 
-# Model is "<provider>:<model>", e.g. "openai:gpt-4.1-mini" or
-# "anthropic:claude-...". Set MODEL and the matching API key in backend/.env.
+
+# Model is "<provider>:<model>", e.g. "openai:gpt-4.1-mini" or "anthropic:...".
+# Set MODEL and the matching API key in backend/.env.
 # See https://ai.pydantic.dev/models/ for exact, current model strings.
 MODEL = os.environ.get("MODEL", "openai:gpt-4.1-mini")
 
-# The name the frontend matches on for CUSTOM events. Keep these in sync.
-RENDER_EVENT = "render_ui"
+PanelStatus = Literal["active", "done", "error", "info"]
 
 
 SYSTEM_PROMPT = dedent(
     """
-    You are a friendly, capable assistant with one standout ability: you can
-    paint live, interactive HTML into a "generative UI" panel on the user's
-    screen by calling the `render_ui` tool.
+    You are a friendly, capable assistant with a powerful ability: a live
+    **Canvas** on the user's screen that you build and update in real time to
+    help them understand your answer. Think of it as a visual workspace that
+    grows as you think — not a single static picture.
 
-    WHEN TO RENDER
-    Reach for `render_ui` whenever a visual communicates better than prose:
-    charts, tables, dashboards, comparison cards, diagrams, timelines, forms,
-    calculators, or small interactive mini-apps. Lead with the visual whenever
-    the user says things like "show", "visualize", "build", "make", "draw",
-    "chart", or "design". If the user just wants to chat or asks a plain
-    question, answer normally in text and don't call the tool.
+    THE CANVAS
+    The Canvas is a vertical stack of **panels** (titled cards). You control it
+    with these tools:
+      - `add_or_update_panel(panel_id, title?, html?, status?)` — create a
+        panel, or update an existing one (matched by `panel_id`). Provide `html`
+        to (re)render its content; OMIT `html` to change only its `title` or
+        `status`. `status` is one of: "active" (working), "done", "error",
+        "info".
+      - `push_panel_data(panel_id, data)` — stream live data into an
+        already-rendered panel WITHOUT reloading it (for charts or feeds that
+        update in place).
+      - `focus_panel(panel_id)` — scroll the Canvas to a panel and highlight it.
+      - `clear_canvas()` — remove all panels; use at the very start of a brand
+        new task.
 
-    HOW TO WRITE THE HTML (the `html` argument)
-    - Return a COMPLETE, self-contained document: a `<!doctype html>`, a
-      `<style>` block, and any `<script>` you need. It renders inside a
-      sandboxed iframe, fully isolated from the host page.
-    - Design for a panel roughly 700px wide on a light background. Aim for
-      clean, polished work: generous spacing, a readable type scale, and a
-      small, coherent color palette. No lorem ipsum — use real, relevant text.
-    - Make interactive things actually work using inline JavaScript (handle
-      clicks, inputs, etc.). Do NOT use localStorage or sessionStorage — the
-      sandbox blocks them; keep all state in in-memory variables.
-    - You MAY load libraries from a CDN via `<script src="...">` (Chart.js, D3,
-      etc.); they load when the user is online. For simple visuals, prefer
-      inline SVG/CSS so they also work offline.
-    - Always pass a short, descriptive `title`.
+    WORK STEP BY STEP, VISUALLY
+    When a question has multiple steps or parts, do NOT answer all at once. Move
+    through it step by step, and for each step:
+      1) say one short sentence in chat about what you're doing, then
+      2) add or update a panel that visualizes that step.
+    This lets the user watch your reasoning take shape. Use one panel per step
+    or section, each with a stable `panel_id` (e.g. "step-1", "chart",
+    "summary") and a short `title`. A good rhythm: add a panel with
+    `status="active"` when you START a step, then update the SAME panel to
+    `status="done"` with the finished visual when it's ready. Add a final
+    "summary" panel at the end when it helps.
 
-    AFTER RENDERING
-    Do NOT paste or repeat the HTML in your chat reply. Just give a one- or
-    two-sentence note about what you put on screen and how to use it. Each
-    `render_ui` call replaces whatever is currently in the panel, so build the
-    full updated view each time rather than sending fragments.
+    Reuse a `panel_id` to evolve a panel (fill in results, refine a chart, flip
+    its status). Use a NEW `panel_id` to add another panel below.
+
+    WRITING PANEL HTML (the `html` argument)
+      - A complete, self-contained document: a `<!doctype html>`, a `<style>`
+        block, and any inline `<script>`. It renders in a sandboxed iframe,
+        isolated from the page and from other panels. Panels auto-size to their
+        content, so you don't need to set a body height.
+      - Design for ~700px wide on a light background. Clean and polished: clear
+        type, sensible spacing, a small coherent palette, and real (not
+        placeholder) content. Give charts an explicit pixel height in CSS.
+      - Interactive elements must actually work via inline JS. Do NOT use
+        localStorage or sessionStorage (the sandbox blocks them) — keep state in
+        memory.
+      - You MAY load CDN libraries (Chart.js, D3, etc.) via `<script src>`; they
+        load when the user is online. Prefer inline SVG/CSS for simple visuals
+        so they also work offline.
+
+    LIVE DATA (optional, for real-time panels)
+    To update a panel in place after it's rendered, include this listener in the
+    panel's script, then call `push_panel_data(panel_id, data)` one or more
+    times:
+        window.addEventListener('message', (e) => {
+          const m = e.data;
+          if (!m || m.source !== 'agui' || m.type !== 'data') return;
+          const data = m.data;   // update your chart / UI with this
+        });
+
+    STYLE
+    Keep chat replies short — the Canvas carries the detail. NEVER paste panel
+    HTML into chat. If the user just wants to talk or asks something trivial,
+    answer in text without touching the Canvas.
     """
 ).strip()
 
@@ -74,33 +113,85 @@ SYSTEM_PROMPT = dedent(
 agent = Agent(MODEL, instructions=SYSTEM_PROMPT)
 
 
-@agent.tool_plain
-async def render_ui(html: str, title: str = "Generative UI") -> ToolReturn:
-    """Render an HTML document in the generative UI panel on the user's screen.
+def _event(name: str, value: dict) -> list[CustomEvent]:
+    return [CustomEvent(type=EventType.CUSTOM, name=name, value=value)]
 
-    Use this to SHOW the user something visual or interactive instead of
-    describing it in text. Pass a complete, self-contained HTML document.
+
+@agent.tool_plain
+async def add_or_update_panel(
+    panel_id: str,
+    title: str | None = None,
+    html: str | None = None,
+    status: PanelStatus | None = None,
+) -> ToolReturn:
+    """Create a panel on the live Canvas, or update an existing one.
+
+    Panels are matched by `panel_id`: a new id adds a panel at the bottom; an
+    existing id updates that panel in place. This is your main tool for building
+    a step-by-step visual answer.
 
     Args:
-        html: A complete HTML document (doctype, styles, optional scripts).
-            Renders in a sandboxed iframe ~700px wide on a light background.
-        title: A short label for what is being shown (e.g. "Moons by planet").
+        panel_id: Stable id for the panel (e.g. "step-1", "chart", "summary").
+        title: Short panel title shown in its header.
+        html: A complete, self-contained HTML document to render in the panel.
+            Provide this to (re)render content; omit it to change only title or
+            status.
+        status: Visual state badge: "active" (in progress), "done", "error", or
+            "info".
 
     Returns:
-        A confirmation for you (the model). The HTML itself is streamed to the
-        screen as an AG-UI custom event — you do not need to repeat it.
+        A confirmation for you. The UI update is streamed to the screen; do not
+        repeat the HTML in chat.
+    """
+    value: dict[str, Any] = {"id": panel_id}
+    if title is not None:
+        value["title"] = title
+    if html is not None:
+        value["html"] = html
+    if status is not None:
+        value["status"] = status
+
+    note = "Don't repeat the HTML in chat." if html is not None else ""
+    return ToolReturn(
+        return_value=f"Panel '{panel_id}' set on the Canvas. {note}".strip(),
+        metadata=_event("ui_panel", value),
+    )
+
+
+@agent.tool_plain
+async def push_panel_data(panel_id: str, data: Any) -> ToolReturn:
+    """Stream live data into an already-rendered panel without reloading it.
+
+    The panel's HTML must include a `message` listener (see the system prompt's
+    LIVE DATA contract). Call this repeatedly to animate a chart or feed.
+
+    Args:
+        panel_id: Id of an existing panel that listens for data.
+        data: Any JSON-serializable payload to hand to that panel.
     """
     return ToolReturn(
-        return_value=(
-            f"Rendered '{title}' in the generative UI panel on the user's "
-            "screen. Do not repeat the HTML; just briefly tell the user what "
-            "you showed them."
-        ),
-        metadata=[
-            CustomEvent(
-                type=EventType.CUSTOM,
-                name=RENDER_EVENT,
-                value={"html": html, "title": title},
-            )
-        ],
+        return_value=f"Pushed data to panel '{panel_id}'.",
+        metadata=_event("ui_push", {"id": panel_id, "data": data}),
+    )
+
+
+@agent.tool_plain
+async def focus_panel(panel_id: str) -> ToolReturn:
+    """Scroll the Canvas to a panel and briefly highlight it.
+
+    Args:
+        panel_id: Id of the panel to bring into view.
+    """
+    return ToolReturn(
+        return_value=f"Focused panel '{panel_id}'.",
+        metadata=_event("ui_focus", {"id": panel_id}),
+    )
+
+
+@agent.tool_plain
+async def clear_canvas() -> ToolReturn:
+    """Remove all panels and reset the Canvas. Use when starting a new task."""
+    return ToolReturn(
+        return_value="Canvas cleared.",
+        metadata=_event("ui_clear", {}),
     )
