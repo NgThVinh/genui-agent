@@ -55,6 +55,8 @@ PROTOCOL_VERSION = 1
 Surface = Literal["inline", "workspace"]
 ComponentStatus = Literal["active", "done", "error", "info"]
 ComponentSize = Literal["sm", "md", "lg", "full"]
+# Built-in typed components the client can render from props (vs free-form HTML).
+ComponentType = Literal["metric", "chart", "table", "map", "form"]
 
 
 # --------------------------------------------------------------------------- #
@@ -67,6 +69,8 @@ class UIComponent(BaseModel):
     surface: Surface
     title: str | None = None
     status: ComponentStatus | None = None
+    # "html" for a free-form HTML card, or a typed ComponentType ("chart", ...).
+    type: str = "html"
     turn: int = 0
 
 
@@ -119,19 +123,42 @@ SYSTEM_PROMPT = dedent(
         "add it to the workspace") ALWAYS wins.
 
     YOUR TOOLS
-      - render_card(id, surface, html?, title?, status?, size?) — mount a new
-        component, or update an existing one (matched by `id`). `surface` is
-        REQUIRED and is fixed for the life of that id. Provide `html` to
-        (re)render content; OMIT `html` to change only `title`/`status`.
-        `status` is "active" (working), "done", "error", or "info". `size` is an
-        optional hint ("sm"/"md"/"lg"/"full") — the frontend decides final
-        geometry.
+      - render_component(id, surface, component, props, title?, status?, size?) —
+        PREFERRED for maps, charts/dashboards, tables, KPI metrics, and forms.
+        Mounts a real, vetted client component; you supply `props` (data), not
+        code. `component` is one of the TYPED COMPONENTS below and is fixed for
+        the id. Use this whenever the artifact fits a typed component.
+      - render_card(id, surface, html?, title?, status?, size?) — the FALLBACK for
+        the long tail (anything that isn't a typed component): mount/update a
+        free-form HTML card (matched by `id`). `surface` is REQUIRED and fixed for
+        the id. Provide `html` to (re)render; OMIT `html` to change only
+        `title`/`status`. `status` is "active"/"done"/"error"/"info".
       - push_data(id, data) — stream live data into an already-rendered card
         WITHOUT reloading it (animate a chart, append to a feed). Only workspace
         cards receive live data; inline cards are read-once.
       - focus_card(id) — bring a card into view / highlight it.
       - dismiss(id?, surface?) — remove one card by `id`, or clear a whole
         `surface`, or (with neither) clear everything.
+
+    TYPED COMPONENTS (render_component `component` + `props`)
+      - "metric" — KPI tiles. props: { items: [{label, value, delta?, unit?}] }.
+      - "chart" — Chart.js. props: { kind: "line"|"bar"|"area", labels: [...],
+        series: [{name, data: [...]}], height? }. Stream with push_data
+        ({ labels?, series? }) to grow/replace a series live.
+      - "table" — sortable. props: { columns: [{key, label}], rows: [ {..} ] }.
+      - "map" — Leaflet/OpenStreetMap. props: { center: [lat,lng], zoom?,
+        markers: [{lat, lng, label?}], route?: [[lat,lng], ...] }.
+      - "form" — props: { fields: [{name, label, type:
+        "text"|"number"|"select"|"date", options?}], submitLabel? }. On submit it
+        sends you an action (see INTERACTION).
+      Anything that doesn't fit one of these -> render_card with HTML.
+
+    INTERACTION (the UI talks back)
+      Buttons/forms in a component can send you an action; you receive it as a
+      "[component-action]" message naming the component `id`, the action, and a
+      data payload. React by UPDATING that component by id (new props/html) and/or
+      a short chat reply — e.g. a submitted booking form -> confirm and update the
+      card. Design forms/controls expecting this round-trip.
 
     WORK STEP BY STEP, VISUALLY
       For a multi-part answer, don't dump everything at once. For each step: say
@@ -289,6 +316,57 @@ async def render_card(  # noqa: PLR0913 - mirrors the genui render directive's f
     note = " Don't repeat the HTML in chat." if html is not None else ""
     return ToolReturn(
         return_value=f"Component '{id}' {verb} on the {surface} surface.{note}",
+        metadata=[directive, _state_snapshot(ctx)],
+    )
+
+
+@agent.tool
+async def render_component(  # noqa: PLR0913 - mirrors the typed render directive's fields
+    ctx: RunContext[StateDeps[AppState]],
+    id: str,  # noqa: A002 - matches the protocol's instance handle
+    surface: Surface,
+    component: ComponentType,
+    props: dict[str, Any],
+    title: str | None = None,
+    status: ComponentStatus | None = None,
+    size: ComponentSize | None = None,
+) -> ToolReturn:
+    """Mount (or update) a TYPED component the client renders natively from props.
+
+    Prefer this over hand-written HTML for the high-value, must-be-correct cases:
+    maps, charts/dashboards, tables, KPI metrics, and forms. The client owns the
+    real, vetted implementation (e.g. a Leaflet map, a Chart.js chart) — you only
+    supply `props` (and may stream updates with push_data). See the TYPED
+    COMPONENTS catalog in your instructions for each component's prop shape.
+
+    Args:
+        id: Stable instance handle (matched for updates; component type is fixed).
+        surface: "inline" or "workspace". Required on first render; immutable.
+        component: One of "metric", "chart", "table", "map", "form".
+        props: JSON props for the component.
+        title: Short header title.
+        status: "active" | "done" | "error" | "info".
+        size: Optional size hint ("sm"/"md"/"lg"/"full").
+    """
+    existing = _find(ctx, id)
+    comp: str = component
+    if existing is not None:
+        surface = existing.surface  # surface is immutable
+        comp = existing.type  # type is immutable too
+        if title is not None:
+            existing.title = title
+        if status is not None:
+            existing.status = status
+        existing.turn = ctx.deps.state.turn
+    else:
+        ctx.deps.state.ui.components.append(
+            UIComponent(id=id, surface=surface, title=title, status=status, type=component, turn=ctx.deps.state.turn)
+        )
+
+    directive = _genui("render", id=id, surface=surface, type=comp, props=props, title=title, status=status, size=size)
+    verb = "rendered" if existing is None else "updated"
+    return ToolReturn(
+        return_value=f"Component '{id}' ({comp}) {verb} on the {surface} surface.",
         metadata=[directive, _state_snapshot(ctx)],
     )
 

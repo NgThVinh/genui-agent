@@ -12,7 +12,6 @@ import { CanvasCard } from "./CanvasCard";
 import styles from "./canvas.module.css";
 import { CARD_W, type Camera, clampScale, COLS, EST_H, GAP, type Geo, ORIGIN, placeNext } from "./layout";
 
-const HEADER = 38; // approx card header height, for bounds math
 const PAD = 48; // keep this much of the content within view when clamping
 
 type Interaction =
@@ -36,14 +35,8 @@ export function CanvasBoard({ cardIds }: { cardIds: string[] }) {
   const followRef = useRef(true);
   const fitTok = useRef(0);
 
-  const cardH = useCallback(
-    (id: string) => {
-      const g = geo[id];
-      const inner = g?.auto === false ? (g.h ?? EST_H) : (heights.current[id] ?? EST_H);
-      return inner + HEADER;
-    },
-    [geo],
-  );
+  // Full card height from the card's ResizeObserver (covers html + typed cards).
+  const cardH = useCallback((id: string) => heights.current[id] ?? EST_H, []);
 
   const bounds = useCallback(() => {
     const ids = cardIds.filter((id) => geo[id]);

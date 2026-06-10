@@ -13,10 +13,14 @@ export interface GenuiDirective {
   op: GenuiOp;
   id?: string;
   surface?: Surface;
-  type?: "html";
+  /** "html" for a free-form card, or a typed component name ("chart", "map", …). */
+  type?: string;
   title?: string;
   status?: ComponentStatus;
   html?: string;
+  /** Props for a typed component (render op). */
+  props?: unknown;
+  /** Payload for the data op (live stream). */
   data?: unknown;
   size?: ComponentSize;
 }

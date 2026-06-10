@@ -1,4 +1,4 @@
-import { type PointerEvent as ReactPointerEvent } from "react";
+import { type PointerEvent as ReactPointerEvent, useEffect, useRef } from "react";
 import type { CardInstance } from "../../../types/public";
 import { CardChrome } from "../../cards/CardChrome";
 import styles from "./canvas.module.css";
@@ -27,8 +27,21 @@ export function CanvasCard({
   onHeight,
 }: CanvasCardProps) {
   const resized = geo.auto === false;
+  const cardRef = useRef<HTMLDivElement | null>(null);
+
+  // Report total card height for the board's fit/clamp (typed components don't
+  // post iframe heights; this covers both card kinds).
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => onHeight(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [onHeight]);
+
   return (
     <div
+      ref={cardRef}
       className={styles.card}
       data-selected={selected}
       style={{ transform: `translate(${geo.x}px, ${geo.y}px)`, width: geo.w }}
@@ -39,7 +52,6 @@ export function CanvasCard({
         onClose={onClose}
         autoSize={!resized}
         height={resized ? geo.h : undefined}
-        onHeight={onHeight}
         headerProps={{ className: styles.dragHeader, onPointerDown: onHeaderPointerDown }}
       />
       <div className={styles.grip} title="Resize" onPointerDown={onGripPointerDown} />

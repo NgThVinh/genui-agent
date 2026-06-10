@@ -18,6 +18,13 @@ export type { GenUIState, Turn, TurnItem, RunStatus } from "./store/createStore"
 export type { Surface, ComponentStatus, ComponentSize, GenuiDirective, GenuiOp } from "./types/genui";
 export type { AppStateSnapshot, UIComponentDescriptor } from "./types/state";
 export type { AGUIEvent, ChatMessage, RunAgentInput } from "./types/agui";
-export type { GenUITheme, GenUIAction, ChatLayout, CardInstance } from "./types/public";
+export type {
+  GenUITheme,
+  GenUIAction,
+  ChatLayout,
+  CardInstance,
+  GenUIComponentProps,
+  GenUIComponentDef,
+} from "./types/public";
 
 export const version = "0.1.0";

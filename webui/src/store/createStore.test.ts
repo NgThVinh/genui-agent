@@ -48,6 +48,33 @@ describe("applyDirective render", () => {
   });
 });
 
+describe("typed components", () => {
+  it("stores type + props on render and updates live data on the data op", () => {
+    const s = mk();
+    const props = { kind: "line", labels: ["a"], series: [{ name: "x", data: [1] }] };
+    s.getState().applyDirective(render({ id: "chart", surface: "workspace", type: "chart", props }));
+    expect(s.getState().registry.chart.type).toBe("chart");
+    expect(s.getState().registry.chart.props).toEqual(props);
+
+    s.getState().applyDirective({ v: 1, op: "data", id: "chart", data: { labels: ["a", "b"] } });
+    expect(s.getState().registry.chart.data).toEqual({ labels: ["a", "b"] });
+  });
+});
+
+describe("addActionMessage", () => {
+  it("adds a compact action turn and a structured history message", () => {
+    const s = mk();
+    s.getState().addActionMessage({ id: "booking", action: "submit", payload: { city: "Tokyo" } });
+    const turn = s.getState().turns.at(-1)!;
+    expect(turn.role).toBe("action");
+    expect(turn.items[0]).toMatchObject({ kind: "action", label: "booking · submit" });
+    const msg = s.getState().history.at(-1)!;
+    expect(msg.role).toBe("user");
+    expect(msg.content).toContain("[component-action]");
+    expect(msg.content).toContain("Tokyo");
+  });
+});
+
 describe("assistant turn interleaving", () => {
   it("seals the text bubble when a card is inserted, then starts a new bubble", () => {
     const s = mk();

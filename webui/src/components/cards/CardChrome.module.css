@@ -72,3 +72,4 @@
 .btn[aria-pressed="true"] { background: #2a2f3a; color: #fff; border-color: #2a2f3a; }
 
 .body { position: relative; }
+.unknown { padding: 16px; color: #d6453a; font-family: var(--genui-font-mono); font-size: 12px; }

@@ -30,5 +30,27 @@ export interface CardInstance {
   title: string;
   status: ComponentStatus;
   turn: number;
+  /** "html" for a free-form HTML card, or a typed component name. */
+  type: string;
+  /** HTML doc for `type === "html"`. */
   html: string;
+  /** Props for a typed component. */
+  props?: unknown;
+  /** Latest live data pushed into a typed component (via push_data). */
+  data?: unknown;
+}
+
+/** Props a typed (registry) component receives from the SDK. */
+export interface GenUIComponentProps {
+  id: string;
+  props: unknown;
+  data: unknown;
+  status: ComponentStatus;
+  /** Send a user interaction back to the agent (and host onAction). */
+  emitAction: (action: string, payload?: unknown) => void;
+}
+
+/** A registry entry: how to render a typed component. */
+export interface GenUIComponentDef {
+  render: import("react").ComponentType<GenUIComponentProps>;
 }

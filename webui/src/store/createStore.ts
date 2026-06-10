@@ -11,12 +11,19 @@ export type RunStatus = "ready" | "streaming" | "error";
 export type TurnItem =
   | { kind: "text"; id: string; text: string }
   | { kind: "tool"; id: string; name: string }
+  | { kind: "action"; id: string; label: string }
   | { kind: "card"; cardId: string; frozen?: CardInstance };
 
 export interface Turn {
   id: string;
-  role: "user" | "assistant" | "error";
+  role: "user" | "assistant" | "error" | "action";
   items: TurnItem[];
+}
+
+export interface ComponentAction {
+  id: string;
+  action: string;
+  payload?: unknown;
 }
 
 export interface GenUIState {
@@ -40,6 +47,7 @@ export interface GenUIState {
   startAssistantTurn: () => void;
   appendAssistantText: (delta: string) => void;
   addToolChip: (name: string) => void;
+  addActionMessage: (action: ComponentAction) => void;
   setError: (message: string) => void;
   endRun: () => void;
 
@@ -98,6 +106,7 @@ export function createGenUIStore(hostRegistry: CardHostRegistry, threadId: strin
         if (d.title != null) updated.title = d.title;
         if (d.status != null) updated.status = d.status;
         if (d.html != null) updated.html = d.html;
+        if (d.props !== undefined) updated.props = d.props;
         set({ registry: { ...state.registry, [id]: updated } });
         return;
       }
@@ -109,7 +118,9 @@ export function createGenUIStore(hostRegistry: CardHostRegistry, threadId: strin
         title: d.title ?? id,
         status: d.status ?? "info",
         turn: state.userTurn,
+        type: d.type ?? "html",
         html: d.html ?? "",
+        props: d.props,
       };
       const registry = { ...state.registry, [id]: inst };
 
@@ -205,6 +216,19 @@ export function createGenUIStore(hostRegistry: CardHostRegistry, threadId: strin
         set({ turns: turns.map((t) => (t.id === currentTurnId ? { ...turn, items } : t)), currentTurnId });
       },
 
+      // A user interaction inside a card: show a compact chip in the timeline and
+      // append a structured message to history so the agent run can react to it.
+      addActionMessage: (a) => {
+        const label = `${a.id} · ${a.action}`;
+        const turn: Turn = { id: uid(), role: "action", items: [{ kind: "action", id: uid(), label }] };
+        const content = `[component-action] id="${a.id}" action="${a.action}" data=${JSON.stringify(a.payload ?? null)}`;
+        set((s) => ({
+          turns: [...s.turns, turn],
+          history: [...s.history, { id: uid(), role: "user", content }],
+          currentTurnId: null,
+        }));
+      },
+
       setError: (message) => {
         const turn: Turn = { id: uid(), role: "error", items: [{ kind: "text", id: uid(), text: message }] };
         set((s) => ({ turns: [...s.turns, turn], status: "error", currentTurnId: null }));
@@ -233,9 +257,18 @@ export function createGenUIStore(hostRegistry: CardHostRegistry, threadId: strin
           case "render":
             renderCard(d);
             break;
-          case "data":
-            if (d.id) hostRegistry.push(d.id, d.data);
+          case "data": {
+            if (!d.id) break;
+            const inst = get().registry[d.id];
+            if (inst && inst.type !== "html") {
+              // typed component: update its live data in the store (React re-renders)
+              set((s) => ({ registry: { ...s.registry, [d.id as string]: { ...inst, data: d.data } } }));
+            } else {
+              // html card: forward to the sandboxed iframe via the bridge
+              hostRegistry.push(d.id, d.data);
+            }
             break;
+          }
           case "focus":
             if (d.id) set({ focusRequest: { id: d.id, ts: Date.now() } });
             break;

@@ -11,10 +11,18 @@ export function MessageTurn({ turn }: { turn: Turn }) {
     <div className={styles.turn} data-role={turn.role}>
       {turn.items.map((item) => {
         if (item.kind === "text") {
-          return <TextBubble key={item.id} role={turn.role} text={item.text} />;
+          const role = turn.role === "action" ? "assistant" : turn.role;
+          return <TextBubble key={item.id} role={role} text={item.text} />;
         }
         if (item.kind === "tool") {
           return <ToolChip key={item.id} name={item.name} />;
+        }
+        if (item.kind === "action") {
+          return (
+            <div key={item.id} className={styles.actionChip}>
+              ⤷ {item.label}
+            </div>
+          );
         }
         return <CardItem key={item.cardId} cardId={item.cardId} frozen={item.frozen} />;
       })}

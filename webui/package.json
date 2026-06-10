@@ -4,7 +4,9 @@
   "description": "Conversation-first Generative UI React SDK for the genui-agent backend.",
   "type": "module",
   "license": "MIT",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -15,7 +17,9 @@
     },
     "./styles.css": "./dist/genui.css"
   },
-  "sideEffects": ["**/*.css"],
+  "sideEffects": [
+    "**/*.css"
+  ],
   "scripts": {
     "dev": "vite --config vite.playground.config.ts",
     "build": "vite build",
@@ -30,10 +34,13 @@
     "react-dom": ">=18"
   },
   "dependencies": {
+    "chart.js": "^4.5.1",
+    "leaflet": "^1.9.4",
     "zustand": "^5.0.2"
   },
   "devDependencies": {
     "@testing-library/react": "^16.1.0",
+    "@types/leaflet": "^1.9.21",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",

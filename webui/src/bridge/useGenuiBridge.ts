@@ -11,15 +11,14 @@ interface BridgeMessage {
 }
 
 /**
- * The single host-window message listener. The SDK runs in the host window,
- * which is the `parent` of every (sandboxed) card iframe, so card messages land
- * here directly:
+ * The single host-window message listener. Card iframes are children of this
+ * window, so their messages land here directly:
  *   - "genui-internal"/"height" → auto-size the matching card iframe
- *   - "genui"/"action"          → Phase-2 uplink, surfaced to the host `onAction`
+ *   - "genui"/"action"          → route to `emitAction` (host hook + agent turn)
  */
 export function useGenuiBridge(
   hostRegistry: CardHostRegistry,
-  onAction?: (action: GenUIAction) => void,
+  emitAction: (action: GenUIAction) => void,
 ): void {
   useEffect(() => {
     const handler = (e: MessageEvent) => {
@@ -32,10 +31,10 @@ export function useGenuiBridge(
       }
       if (m.source === "genui" && m.type === "action") {
         const id = hostRegistry.idByWindow(e.source);
-        if (id && onAction) onAction({ id, action: m.action ?? "", payload: m.payload });
+        if (id) emitAction({ id, action: m.action ?? "", payload: m.payload });
       }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [hostRegistry, onAction]);
+  }, [hostRegistry, emitAction]);
 }

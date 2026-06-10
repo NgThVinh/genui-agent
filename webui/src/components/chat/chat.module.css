@@ -204,7 +204,18 @@
 
 .turn { display: flex; flex-direction: column; gap: 8px; }
 .turn[data-role="user"] { align-items: flex-end; }
-.turn[data-role="assistant"], .turn[data-role="error"] { align-items: flex-start; }
+.turn[data-role="assistant"], .turn[data-role="error"], .turn[data-role="action"] { align-items: flex-start; }
+
+.actionChip {
+  align-self: flex-start;
+  font-family: var(--genui-font-mono);
+  font-size: 11.5px;
+  color: var(--genui-accent-2);
+  background: #34d0c414;
+  border: 1px solid #34d0c440;
+  border-radius: 8px;
+  padding: 5px 9px;
+}
 
 .bubble {
   max-width: 86%;

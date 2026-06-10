@@ -1,13 +1,17 @@
 import { createContext, useContext } from "react";
 import type { CardHostRegistry } from "../bridge/hostRegistry";
 import type { GenUIStore } from "../store/createStore";
-import type { GenUIAction } from "../types/public";
+import type { GenUIAction, GenUIComponentDef } from "../types/public";
 
 export interface GenUIContextValue {
   store: GenUIStore;
   hostRegistry: CardHostRegistry;
   baseUrl: string;
-  /** Register a listener for card actions (Phase-2 uplink). Returns an unsubscribe fn. */
+  /** Effective typed-component registry (built-ins merged with host overrides). */
+  components: Record<string, GenUIComponentDef>;
+  /** Route a card interaction (host onAction first, then an agent turn). */
+  emitAction: (action: GenUIAction) => void;
+  /** Observe card actions (read-only). Returns an unsubscribe fn. */
   subscribeAction: (listener: (action: GenUIAction) => void) => () => void;
 }
 
