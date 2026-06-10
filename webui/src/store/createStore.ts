@@ -27,10 +27,8 @@ export interface GenUIState {
   turns: Turn[];
   history: ChatMessage[];
   registry: Record<string, CardInstance>;
-  dockId: string | null;
-  canvasIds: string[];
-  canvasOverlayActive: boolean;
-  dockCollapsed: boolean;
+  workspaceIds: string[];
+  workspaceOpen: boolean;
   focusRequest: { id: string; ts: number } | null;
   currentTurnId: string | null;
 
@@ -52,9 +50,7 @@ export interface GenUIState {
   buildState: () => AppStateSnapshot;
 
   // surface controls (user-initiated)
-  setCanvasOverlayActive: (active: boolean) => void;
-  toggleDockCollapsed: () => void;
-  setDockCollapsed: (collapsed: boolean) => void;
+  setWorkspaceOpen: (open: boolean) => void;
   dismissCard: (id: string) => void;
 }
 
@@ -83,11 +79,10 @@ export function createGenUIStore(hostRegistry: CardHostRegistry, threadId: strin
       delete next[id];
       hostRegistry.detach(id);
       const patch: Partial<GenUIState> = { registry: next };
-      if (get().dockId === id) patch.dockId = null;
-      if (inst?.surface === "canvas") {
-        const canvasIds = get().canvasIds.filter((c) => c !== id);
-        patch.canvasIds = canvasIds;
-        if (canvasIds.length === 0) patch.canvasOverlayActive = false;
+      if (inst?.surface === "workspace") {
+        const workspaceIds = get().workspaceIds.filter((c) => c !== id);
+        patch.workspaceIds = workspaceIds;
+        if (workspaceIds.length === 0) patch.workspaceOpen = false;
       }
       return patch;
     };
@@ -107,7 +102,7 @@ export function createGenUIStore(hostRegistry: CardHostRegistry, threadId: strin
         return;
       }
 
-      const surface: Surface = d.surface ?? "canvas";
+      const surface: Surface = d.surface ?? "workspace";
       const inst: CardInstance = {
         id,
         surface,
@@ -125,17 +120,8 @@ export function createGenUIStore(hostRegistry: CardHostRegistry, threadId: strin
           t.id === currentTurnId ? { ...turn, items: [...turn.items, { kind: "card" as const, cardId: id }] } : t,
         );
         set({ registry, turns: newTurns, currentTurnId });
-      } else if (surface === "dock") {
-        const prevDock = state.dockId;
-        let patch: Partial<GenUIState> = { registry, dockId: id, dockCollapsed: false };
-        if (prevDock && prevDock !== id) {
-          // singleton: retire the previous dock card first
-          const cleaned = dropFromSurfaces(prevDock, registry);
-          patch = { ...patch, ...cleaned, registry: cleaned.registry ?? registry, dockId: id };
-        }
-        set(patch);
       } else {
-        set({ registry, canvasIds: [...state.canvasIds, id], canvasOverlayActive: true });
+        set({ registry, workspaceIds: [...state.workspaceIds, id], workspaceOpen: true });
       }
     };
 
@@ -160,7 +146,7 @@ export function createGenUIStore(hostRegistry: CardHostRegistry, threadId: strin
       }
       // clear everything
       for (const id of Object.keys(state.registry)) hostRegistry.detach(id);
-      set({ registry: {}, dockId: null, canvasIds: [], canvasOverlayActive: false });
+      set({ registry: {}, workspaceIds: [], workspaceOpen: false });
     };
 
     return {
@@ -171,10 +157,8 @@ export function createGenUIStore(hostRegistry: CardHostRegistry, threadId: strin
       turns: [],
       history: [],
       registry: {},
-      dockId: null,
-      canvasIds: [],
-      canvasOverlayActive: false,
-      dockCollapsed: false,
+      workspaceIds: [],
+      workspaceOpen: false,
       focusRequest: null,
       currentTurnId: null,
 
@@ -325,9 +309,7 @@ export function createGenUIStore(hostRegistry: CardHostRegistry, threadId: strin
         };
       },
 
-      setCanvasOverlayActive: (canvasOverlayActive) => set({ canvasOverlayActive }),
-      toggleDockCollapsed: () => set((s) => ({ dockCollapsed: !s.dockCollapsed })),
-      setDockCollapsed: (dockCollapsed) => set({ dockCollapsed }),
+      setWorkspaceOpen: (workspaceOpen) => set({ workspaceOpen }),
       dismissCard: (id) => set(dropFromSurfaces(id, get().registry)),
     };
   });

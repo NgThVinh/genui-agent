@@ -9,6 +9,9 @@ export interface Geo {
   y: number;
   w: number;
   col: number;
+  /** When false, the card is manually resized: `h` is the explicit iframe height. */
+  auto?: boolean;
+  h?: number;
 }
 
 export interface Camera {

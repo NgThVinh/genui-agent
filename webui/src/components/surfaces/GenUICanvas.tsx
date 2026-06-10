@@ -1,28 +1,31 @@
 import { useGenUI } from "../../hooks/useGenUI";
 import { useGenUIContext } from "../../provider/context";
+import { CardChrome } from "../cards/CardChrome";
 import { CanvasBoard } from "./canvas/CanvasBoard";
-import styles from "./canvas/canvas.module.css";
+import boardStyles from "./canvas/canvas.module.css";
 
 /**
- * The canvas surface: a transparent overlay anchored over the chat region.
- * Invisible/absent (fully click-through) until canvas cards exist, then it
- * activates and renders the pan/zoom board on top of the conversation.
- * Rendered inside <GenUIChat> by default; also exported as <GenUICanvas> for
- * hosts that want to anchor it over their own relatively-positioned container.
+ * The workspace surface contents: fills the attached pane (`GenUIChat` provides
+ * the sized, relative container). One card → a single focused panel; two or more
+ * → the bounded, freeform pan/zoom board. Renders nothing when empty.
  */
-export function CanvasOverlay() {
+export function CanvasWorkspace() {
   const { store } = useGenUIContext();
-  const active = useGenUI((s) => s.canvasOverlayActive);
-  const canvasIds = useGenUI((s) => s.canvasIds);
+  const ids = useGenUI((s) => s.workspaceIds);
+  const single = useGenUI((s) => (s.workspaceIds.length === 1 ? s.registry[s.workspaceIds[0]] : undefined));
 
-  if (!active || canvasIds.length === 0) return null;
+  if (ids.length === 0) return null;
 
-  return (
-    <div className={styles.overlay}>
-      <CanvasBoard cardIds={canvasIds} onClose={() => store.getState().setCanvasOverlayActive(false)} />
-    </div>
-  );
+  if (ids.length === 1) {
+    if (!single) return null;
+    return (
+      <div className={boardStyles.single}>
+        <CardChrome inst={single} onClose={() => store.getState().dismissCard(single.id)} />
+      </div>
+    );
+  }
+
+  return <CanvasBoard cardIds={ids} />;
 }
 
-/** Public alias for host-placed usage (anchor over a relative container). */
-export const GenUICanvas = CanvasOverlay;
+export const GenUICanvas = CanvasWorkspace;

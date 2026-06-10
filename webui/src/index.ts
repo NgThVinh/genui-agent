@@ -9,7 +9,6 @@ export { useAgentRun } from "./transport/useAgentRun";
 
 // Surface components
 export { GenUIChat } from "./components/chat/GenUIChat";
-export { GenUIDock } from "./components/surfaces/GenUIDock";
 export { GenUICanvas } from "./components/surfaces/GenUICanvas";
 
 // Store types (for advanced selectors)

@@ -19,32 +19,32 @@ describe("applyDirective render", () => {
     expect(turn.items.map((i) => i.kind)).toEqual(["text", "card"]);
   });
 
-  it("activates the canvas overlay for canvas cards", () => {
+  it("opens the workspace for workspace cards", () => {
     const s = mk();
-    s.getState().applyDirective(render({ id: "c1", surface: "canvas", html: "<p>1</p>" }));
-    expect(s.getState().canvasIds).toEqual(["c1"]);
-    expect(s.getState().canvasOverlayActive).toBe(true);
+    s.getState().applyDirective(render({ id: "c1", surface: "workspace", html: "<p>1</p>" }));
+    expect(s.getState().workspaceIds).toEqual(["c1"]);
+    expect(s.getState().workspaceOpen).toBe(true);
   });
 
-  it("treats dock as a singleton (new dock replaces old)", () => {
+  it("stacks multiple workspace cards (no singleton replacement)", () => {
     const s = mk();
-    s.getState().applyDirective(render({ id: "d1", surface: "dock", html: "<p>1</p>" }));
-    s.getState().applyDirective(render({ id: "d2", surface: "dock", html: "<p>2</p>" }));
-    expect(s.getState().dockId).toBe("d2");
-    expect(s.getState().registry.d1).toBeUndefined();
-    expect(s.getState().registry.d2).toBeDefined();
+    s.getState().applyDirective(render({ id: "w1", surface: "workspace", html: "<p>1</p>" }));
+    s.getState().applyDirective(render({ id: "w2", surface: "workspace", html: "<p>2</p>" }));
+    expect(s.getState().workspaceIds).toEqual(["w1", "w2"]);
+    expect(s.getState().registry.w1).toBeDefined();
+    expect(s.getState().registry.w2).toBeDefined();
   });
 
   it("updates in place by id and keeps surface immutable", () => {
     const s = mk();
-    s.getState().applyDirective(render({ id: "c", surface: "canvas", html: "<p>1</p>", status: "active" }));
+    s.getState().applyDirective(render({ id: "c", surface: "workspace", html: "<p>1</p>", status: "active" }));
     s.getState().applyDirective(render({ id: "c", surface: "inline", status: "done", title: "T2" }));
     const inst = s.getState().registry.c;
-    expect(inst.surface).toBe("canvas"); // immutable
+    expect(inst.surface).toBe("workspace"); // immutable
     expect(inst.status).toBe("done");
     expect(inst.title).toBe("T2");
     expect(inst.html).toBe("<p>1</p>"); // html omitted on update → unchanged
-    expect(s.getState().canvasIds).toEqual(["c"]); // not duplicated
+    expect(s.getState().workspaceIds).toEqual(["c"]); // not duplicated
   });
 });
 
@@ -76,11 +76,11 @@ describe("retireInline", () => {
 });
 
 describe("reconcile", () => {
-  it("syncs title/status and removes server-absent non-inline cards", () => {
+  it("syncs title/status and removes server-absent workspace cards", () => {
     const s = mk();
-    s.getState().applyDirective(render({ id: "keep", surface: "canvas", html: "<p/>", status: "active" }));
-    s.getState().applyDirective(render({ id: "gone", surface: "dock", html: "<p/>" }));
-    s.getState().reconcile({ ui: { components: [{ id: "keep", surface: "canvas", title: "K!", status: "done", turn: 0 }] }, turn: 1 });
+    s.getState().applyDirective(render({ id: "keep", surface: "workspace", html: "<p/>", status: "active" }));
+    s.getState().applyDirective(render({ id: "gone", surface: "workspace", html: "<p/>" }));
+    s.getState().reconcile({ ui: { components: [{ id: "keep", surface: "workspace", title: "K!", status: "done", turn: 0 }] }, turn: 1 });
     const st = s.getState();
     expect(st.registry.gone).toBeUndefined();
     expect(st.registry.keep.title).toBe("K!");
@@ -92,10 +92,10 @@ describe("buildState", () => {
   it("emits descriptor-only components (no html) plus the turn counter", () => {
     const s = mk();
     s.getState().addUserMessage("hi"); // userTurn → 1
-    s.getState().applyDirective(render({ id: "c", surface: "canvas", html: "<p>big</p>", title: "C" }));
+    s.getState().applyDirective(render({ id: "c", surface: "workspace", html: "<p>big</p>", title: "C" }));
     const snap = s.getState().buildState();
     expect(snap.turn).toBe(1);
-    expect(snap.ui.components).toEqual([{ id: "c", surface: "canvas", title: "C", status: "info", turn: 1 }]);
+    expect(snap.ui.components).toEqual([{ id: "c", surface: "workspace", title: "C", status: "info", turn: 1 }]);
     expect(JSON.stringify(snap)).not.toContain("big");
   });
 });
@@ -104,21 +104,20 @@ describe("dismiss", () => {
   it("removes by id, by surface, and all", () => {
     const s = mk();
     const seed = () => {
-      s.getState().applyDirective(render({ id: "a", surface: "canvas", html: "<p/>" }));
-      s.getState().applyDirective(render({ id: "b", surface: "canvas", html: "<p/>" }));
-      s.getState().applyDirective(render({ id: "c", surface: "dock", html: "<p/>" }));
+      s.getState().applyDirective(render({ id: "a", surface: "workspace", html: "<p/>" }));
+      s.getState().applyDirective(render({ id: "b", surface: "workspace", html: "<p/>" }));
+      s.getState().applyDirective(render({ id: "c", surface: "inline", html: "<p/>" }));
     };
     seed();
     s.getState().applyDirective({ v: 1, op: "dismiss", id: "a" });
     expect(Object.keys(s.getState().registry).sort()).toEqual(["b", "c"]);
 
-    s.getState().applyDirective({ v: 1, op: "dismiss", surface: "canvas" });
+    s.getState().applyDirective({ v: 1, op: "dismiss", surface: "workspace" });
     expect(Object.keys(s.getState().registry)).toEqual(["c"]);
-    expect(s.getState().canvasIds).toEqual([]);
-    expect(s.getState().canvasOverlayActive).toBe(false);
+    expect(s.getState().workspaceIds).toEqual([]);
+    expect(s.getState().workspaceOpen).toBe(false);
 
     s.getState().applyDirective({ v: 1, op: "dismiss" });
     expect(Object.keys(s.getState().registry)).toEqual([]);
-    expect(s.getState().dockId).toBeNull();
   });
 });

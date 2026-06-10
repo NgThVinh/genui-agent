@@ -3,7 +3,7 @@
 
 export const PROTOCOL_VERSION = 1;
 
-export type Surface = "inline" | "dock" | "canvas";
+export type Surface = "inline" | "workspace";
 export type ComponentStatus = "active" | "done" | "error" | "info";
 export type ComponentSize = "sm" | "md" | "lg" | "full";
 export type GenuiOp = "render" | "data" | "focus" | "dismiss";

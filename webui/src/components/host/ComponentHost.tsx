@@ -8,6 +8,8 @@ interface ComponentHostProps {
   html: string;
   /** Auto-size to content height (default). Set false when a surface controls height. */
   autoSize?: boolean;
+  /** Explicit iframe height (px) used when `autoSize` is false (e.g. a resized card). */
+  height?: number;
   /** Show the raw HTML source instead of the rendered iframe. */
   showSource?: boolean;
   /** Notified with the clamped content height when auto-sizing. */
@@ -20,7 +22,7 @@ interface ComponentHostProps {
  * appended, registers with the per-provider CardHostRegistry for the data/height
  * bridge, and flushes queued `data` pushes on load.
  */
-export function ComponentHost({ id, html, autoSize = true, showSource = false, onHeight }: ComponentHostProps) {
+export function ComponentHost({ id, html, autoSize = true, height, showSource = false, onHeight }: ComponentHostProps) {
   const { hostRegistry } = useGenUIContext();
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
@@ -54,7 +56,7 @@ export function ComponentHost({ id, html, autoSize = true, showSource = false, o
       title={`Component: ${id}`}
       srcDoc={html + AUTOHEIGHT}
       onLoad={() => hostRegistry.markReady(id)}
-      style={autoSize ? { height: 60 } : undefined}
+      style={autoSize ? { height: 60 } : height ? { height } : undefined}
     />
   );
 }

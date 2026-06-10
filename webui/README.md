@@ -2,13 +2,13 @@
 
 Conversation-first Generative UI React SDK for the genui-agent backend.
 
-The chat is the hero; Generative UI is a supporting layer. The agent drives three
-surfaces over the AG-UI stream, which the SDK remaps to host-placed React components:
+The chat is the hero; Generative UI is a supporting layer. The agent drives two
+surfaces over the AG-UI stream, which the SDK renders as React components:
 
 - **inline** — a card rendered as a block inside the assistant message stream.
-- **dock** — a pinned, collapsible singleton reference card.
-- **canvas** — a transparent, click-through overlay anchored over the chat that
-  activates (pan/zoom board) only when canvas cards arrive.
+- **workspace** — an attached, resizable panel beside the chat that opens when the
+  agent renders to it. One card shows as a focused panel; several lay out as a
+  bounded, freeform pan/zoom board.
 
 ## Install & use
 
@@ -28,9 +28,9 @@ export function App() {
 }
 ```
 
-`<GenUIChat>` already includes the dock and the canvas overlay. For custom
-layouts you can also place `<GenUIDock>` / `<GenUICanvas>` yourself, or build a
-fully custom UI with the `useGenUI(selector)` and `useAgentRun()` hooks.
+`<GenUIChat>` already includes the workspace panel. For custom layouts you can
+place `<GenUICanvas>` yourself, or build a fully custom UI with the
+`useGenUI(selector)` and `useAgentRun()` hooks.
 
 ### Theming
 Override any `--genui-*` token via the `theme` prop (e.g. `{ accent, font, radius }`)

@@ -1,16 +1,81 @@
 /* Conversation chrome (dark). All colors via --genui-* tokens. */
 .shell {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   min-height: 0;
   height: 100%;
   width: 100%;
   background: var(--genui-panel);
   color: var(--genui-text);
   font-family: var(--genui-font);
+  container-type: inline-size;
+  overflow: hidden;
 }
 .shell[data-layout="sidebar"] { border-left: 1px solid var(--genui-line); }
 .shell[data-layout="page"] { border: 0; }
+
+/* conversation column (hero) */
+.conversation {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--genui-panel);
+}
+
+/* attached, resizable workspace */
+.divider {
+  flex: 0 0 6px;
+  cursor: col-resize;
+  background: var(--genui-line);
+  position: relative;
+  touch-action: none;
+}
+.divider::after { content: ""; position: absolute; inset: 0 -5px; }
+.divider:hover { background: #5b58f0aa; }
+
+.workspacePane {
+  flex: 0 0 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--genui-ink);
+  border-left: 1px solid var(--genui-line);
+}
+.paneHead {
+  flex: 0 0 auto;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--genui-line);
+  background: #15181f;
+}
+.paneTitle {
+  font-family: var(--genui-font-head);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-size: 11px;
+  color: var(--genui-faint);
+}
+.boardArea { position: relative; flex: 1; min-height: 0; }
+
+/* stacked when the shell itself is narrow (no viewport assumptions) */
+@container (max-width: 720px) {
+  .shell { flex-direction: column; }
+  .divider { display: none; }
+  .workspacePane {
+    flex-basis: auto !important;
+    width: auto;
+    height: 48%;
+    order: -1;
+    border-left: 0;
+    border-bottom: 1px solid var(--genui-line);
+  }
+}
 
 .head {
   flex: 0 0 auto;
@@ -57,15 +122,20 @@
   background: #ffffff08;
   color: var(--genui-muted);
   border-radius: 8px;
-  width: 28px;
+  min-width: 28px;
   height: 28px;
+  padding: 0 8px;
   cursor: pointer;
-  display: grid;
-  place-items: center;
-  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 13px;
+  font-family: var(--genui-font-mono);
   line-height: 1;
 }
 .iconBtn:hover { color: var(--genui-text); border-color: #5b58f0aa; }
+.iconBtn[data-on="true"] { background: #2a2778; color: #cfcdff; border-color: #5b58f0aa; }
 @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
 /* messages region (relative so the canvas overlay can anchor over it) */
@@ -240,7 +310,10 @@
   box-shadow: 0 24px 70px #00000066;
   z-index: 2147483000;
   border: 1px solid var(--genui-line);
+  transition: width 0.22s ease, height 0.22s ease;
 }
+/* widen the floating panel so the workspace split fits when it opens */
+.floatingPanel[data-wide="true"] { width: min(900px, calc(100vw - 44px)); height: min(720px, calc(100vh - 44px)); }
 @media (max-width: 560px) {
   .floatingPanel { right: 0; bottom: 0; width: 100vw; height: 100vh; max-width: 100vw; max-height: 100vh; border-radius: 0; }
 }

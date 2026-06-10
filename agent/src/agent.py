@@ -1,9 +1,9 @@
 """
 Agent core: a Pydantic AI agent that drives **generative UI** on the user's
 screen. Instead of answering in text alone, the agent can mount rich, live HTML
-components onto one of three *surfaces* — inline in the chat, a pinned side
-*dock*, or the spatial *canvas* whiteboard — and update or dismiss them as it
-works.
+components onto one of two *surfaces* — *inline* in the chat stream, or the
+attached *workspace* panel beside the chat (which holds one focused card or a
+freeform board of several) — and update or dismiss them as it works.
 
 Protocol (the "genui directive"): every UI tool returns a `ToolReturn` whose
 `metadata` carries AG-UI events. Pydantic AI's AG-UI adapter streams those to
@@ -52,7 +52,7 @@ PROTOCOL_VERSION = 1
 
 # The render targets this client supports (the capability descriptor). The agent
 # may only target one of these; the frontend owns how each is physically laid out.
-Surface = Literal["inline", "dock", "canvas"]
+Surface = Literal["inline", "workspace"]
 ComponentStatus = Literal["active", "done", "error", "info"]
 ComponentSize = Literal["sm", "md", "lg", "full"]
 
@@ -95,27 +95,28 @@ SYSTEM_PROMPT = dedent(
     surface); the frontend decides HOW (exact size, position, responsive
     layout). Never reason about pixels, breakpoints, or screen coordinates.
 
-    THE THREE SURFACES
+    THE TWO SURFACES
       - "inline" — a rich card placed *inside your chat reply*, right where you
         are speaking, like a visual code block. Use it when the artifact IS the
         explanation at this point: small, self-contained, read-once, fine to
         scroll away with the conversation (a single diagram, a quick comparison,
         a rendered formula). Inline cards are frozen once your turn ends, so
         re-explaining later creates a NEW inline card.
-      - "dock" — one focused, pinnable window beside the chat. Use it for a
-        single PERSISTENT reference or inspector the user keeps glancing at while
-        chatting (a live metric panel, a detail view). The dock is a SINGLETON:
-        a new dock card replaces whatever was there.
-      - "canvas" — an infinite whiteboard of many cards in 2-D space. Use it when
-        the artifact is multi-part, comparative, or spatially arranged (several
-        cards to compare, a pipeline laid out as connected stages).
+      - "workspace" — a persistent panel attached beside the chat. It holds one
+        OR many cards: a single card shows as a focused panel; several cards lay
+        out as a freeform board the user can arrange. Use it for anything the
+        user keeps coming back to or that needs room: a live metric/monitor, a
+        dashboard, a map, a diagram, a timeline, or several cards to compare.
+        Workspace cards PERSIST across turns until you dismiss them.
 
     CHOOSING A SURFACE (rubric)
-      - Lifespan: just this turn -> inline; an ongoing reference -> dock/canvas.
-      - Size / parts: fits one card read once -> inline; one big focused thing
-        -> dock; several or arranged -> canvas.
-      - An explicit user instruction ("put it in a side panel", "add it to the
-        board") ALWAYS wins.
+      - Lifespan: just this turn / read-once -> inline; an ongoing reference,
+        anything live or that the user will revisit -> workspace.
+      - Size / parts: a quick single illustration tied to what you just said ->
+        inline; a focused reference, a dashboard, or several arranged/comparative
+        cards -> workspace (render one card per part; they share the panel).
+      - An explicit user instruction ("put it in the panel", "keep it up",
+        "add it to the workspace") ALWAYS wins.
 
     YOUR TOOLS
       - render_card(id, surface, html?, title?, status?, size?) — mount a new
@@ -126,8 +127,8 @@ SYSTEM_PROMPT = dedent(
         optional hint ("sm"/"md"/"lg"/"full") — the frontend decides final
         geometry.
       - push_data(id, data) — stream live data into an already-rendered card
-        WITHOUT reloading it (animate a chart, append to a feed). Only dock and
-        canvas cards receive live data; inline cards are read-once.
+        WITHOUT reloading it (animate a chart, append to a feed). Only workspace
+        cards receive live data; inline cards are read-once.
       - focus_card(id) — bring a card into view / highlight it.
       - dismiss(id?, surface?) — remove one card by `id`, or clear a whole
         `surface`, or (with neither) clear everything.
@@ -135,8 +136,8 @@ SYSTEM_PROMPT = dedent(
     WORK STEP BY STEP, VISUALLY
       For a multi-part answer, don't dump everything at once. For each step: say
       one short sentence in chat about what you're doing, then render or update a
-      card for it. A good rhythm on canvas/dock: render with status="active" when
-      you START, then update the SAME id to status="done" with the finished
+      card for it. A good rhythm in the workspace: render with status="active"
+      when you START, then update the SAME id to status="done" with the finished
       visual. Use a stable, meaningful `id` per component ("rag-retrieval",
       "latency", "summary").
 
@@ -159,7 +160,7 @@ SYSTEM_PROMPT = dedent(
       - You MAY load CDN libraries (Chart.js, D3, ...) via `<script src>`; prefer
         inline SVG/CSS for simple visuals so they also work offline.
 
-    LIVE DATA (dock/canvas only)
+    LIVE DATA (workspace only)
       To update a card in place after it renders, include this listener in the
       card's script, then call push_data(id, data) one or more times:
           window.addEventListener('message', (e) => {
@@ -180,12 +181,12 @@ SYSTEM_PROMPT = dedent(
         architecture, embedding/knowledge maps -> D3 (or a force layout); simple
         diagrams/timelines -> inline SVG/CSS. Give every chart an explicit pixel
         height.
-      - SURFACE BY INTENT: "pin it", "keep me posted", "monitor", a live status
-        / deploy / metric feed -> "dock" + `push_data`. "map", "diagram",
-        "compare", "timeline", "architecture", or several arranged pieces ->
-        "canvas" (one card per part, plus a summary/verdict card; use
-        `focus_card` to spotlight the winner or the current step). A single quick
-        illustration that belongs with what you just said -> "inline".
+      - SURFACE BY INTENT: a single quick illustration that belongs with what you
+        just said -> "inline". Everything persistent or roomy -> "workspace":
+        live status / deploy / metric feeds (+ `push_data`), maps, dashboards,
+        diagrams, timelines, architecture, or several arranged/comparative pieces
+        (render one card per part plus a summary/verdict card; use `focus_card`
+        to spotlight the winner or the current step).
       - RE-FLOW / EDITS: when the user tweaks something ("push the beta a week",
         "now sort descending", "where do I park?"), UPDATE the existing card by
         its `id` (re-render its html) — do not spawn a new one.
@@ -256,7 +257,7 @@ async def render_card(  # noqa: PLR0913 - mirrors the genui render directive's f
 
     Args:
         id: Stable instance handle (e.g. "rag-retrieval", "latency", "summary").
-        surface: Where to mount it — "inline", "dock", or "canvas". Required on
+        surface: Where to mount it — "inline" or "workspace". Required on
             first render; immutable afterwards.
         html: A complete, self-contained HTML document. Provide to (re)render;
             omit to change only title/status.
@@ -298,7 +299,7 @@ async def push_data(ctx: RunContext[StateDeps[AppState]], id: str, data: Any) ->
 
     The card's HTML must include a `message` listener (see the LIVE DATA contract
     in the system prompt). Call repeatedly to animate a chart or append to a
-    feed. Live data targets dock/canvas cards; inline cards are read-once.
+    feed. Live data targets workspace cards; inline cards are read-once.
 
     Args:
         id: Id of an existing card that listens for data.
@@ -309,7 +310,7 @@ async def push_data(ctx: RunContext[StateDeps[AppState]], id: str, data: Any) ->
         return ToolReturn(
             return_value=(
                 f"'{id}' is an inline card, which is read-once and doesn't take live data. "
-                "Render it on the dock or canvas if you need to stream into it."
+                "Render it on the workspace surface if you need to stream into it."
             ),
             metadata=[],
         )
@@ -324,8 +325,8 @@ async def focus_card(id: str) -> ToolReturn:  # noqa: A002
     """Bring a card into view and briefly highlight it.
 
     Args:
-        id: Id of the card to focus (pan the canvas to it, expand the dock, or
-            scroll the inline card into view).
+        id: Id of the card to focus (pan the workspace to it, or scroll the
+            inline card into view).
     """
     return ToolReturn(
         return_value=f"Focused '{id}'.",

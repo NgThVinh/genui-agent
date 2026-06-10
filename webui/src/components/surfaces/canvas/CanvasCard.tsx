@@ -9,13 +9,24 @@ interface CanvasCardProps {
   geo: Geo;
   selected: boolean;
   onHeaderPointerDown: (e: ReactPointerEvent) => void;
+  onGripPointerDown: (e: ReactPointerEvent) => void;
   onSelect: () => void;
   onClose: () => void;
   onHeight: (px: number) => void;
 }
 
-/** A draggable, auto-sizing card positioned on the canvas world. */
-export function CanvasCard({ inst, geo, selected, onHeaderPointerDown, onSelect, onClose, onHeight }: CanvasCardProps) {
+/** A draggable, resizable, auto-sizing card positioned on the workspace board. */
+export function CanvasCard({
+  inst,
+  geo,
+  selected,
+  onHeaderPointerDown,
+  onGripPointerDown,
+  onSelect,
+  onClose,
+  onHeight,
+}: CanvasCardProps) {
+  const resized = geo.auto === false;
   return (
     <div
       className={styles.card}
@@ -26,9 +37,12 @@ export function CanvasCard({ inst, geo, selected, onHeaderPointerDown, onSelect,
       <CardChrome
         inst={inst}
         onClose={onClose}
+        autoSize={!resized}
+        height={resized ? geo.h : undefined}
         onHeight={onHeight}
         headerProps={{ className: styles.dragHeader, onPointerDown: onHeaderPointerDown }}
       />
+      <div className={styles.grip} title="Resize" onPointerDown={onGripPointerDown} />
     </div>
   );
 }
