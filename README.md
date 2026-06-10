@@ -81,8 +81,8 @@ Open <http://localhost:8000>. Or from the project root, `./run.sh`.
 ### Choosing a model
 
 ```dotenv
-MODEL=openai:gpt-4.1-mini
-OPENAI_API_KEY=sk-...
+MODEL=google:gemini-3-flash-preview
+GOOGLE_API_KEY=...
 ```
 
 Swap in any provider Pydantic AI supports (Anthropic, Google, Groq, Ollama, …) —
