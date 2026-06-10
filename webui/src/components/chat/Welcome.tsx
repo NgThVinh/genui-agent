@@ -1,14 +1,8 @@
 import { useAgentRun } from "../../transport/useAgentRun";
 import styles from "./chat.module.css";
+import { SCENES } from "./scenes";
 
-const SAMPLES = [
-  "Explain how RAG works with a quick inline diagram",
-  "Compare 3 vector databases — a card each on the canvas",
-  "Pin a live latency monitor to the dock and stream it",
-  "Lay out a system design: API, workers, queue, and DB",
-];
-
-/** Empty-state greeting with one-tap sample prompts. */
+/** Empty-state greeting with a gallery of one-tap scene demos. */
 export function Welcome() {
   const { send } = useAgentRun();
   return (
@@ -16,13 +10,22 @@ export function Welcome() {
       <div className={styles.welcomeMark} aria-hidden="true" />
       <h2 className={styles.welcomeTitle}>How can I help?</h2>
       <p className={styles.welcomeSub}>
-        Ask anything. I can explain visually — a quick inline card, a pinned reference, or a canvas of
-        comparisons.
+        I explain things visually — pick a demo and watch it build, or just ask your own question.
       </p>
-      <div className={styles.samples}>
-        {SAMPLES.map((s) => (
-          <button key={s} type="button" className={styles.sample} onClick={() => void send(s)}>
-            {s}
+      <div className={styles.gallery}>
+        {SCENES.map((scene) => (
+          <button
+            key={scene.id}
+            type="button"
+            className={styles.sceneCard}
+            title={scene.prompt}
+            onClick={() => void send(scene.prompt)}
+          >
+            <span className={styles.sceneIcon} aria-hidden="true">
+              {scene.icon}
+            </span>
+            <span className={styles.sceneTitle}>{scene.title}</span>
+            <span className={styles.sceneBlurb}>{scene.blurb}</span>
           </button>
         ))}
       </div>

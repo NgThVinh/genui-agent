@@ -85,12 +85,13 @@
 /* welcome / empty state */
 .welcome {
   margin: auto;
-  max-width: 440px;
+  max-width: 640px;
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 24px 8px;
+  padding: 20px 4px;
 }
 .welcomeMark {
   width: 46px;
@@ -101,20 +102,35 @@
   margin-bottom: 16px;
 }
 .welcomeTitle { font-family: var(--genui-font-head); font-weight: 600; font-size: 20px; margin: 0 0 6px; color: var(--genui-text); }
-.welcomeSub { color: var(--genui-muted); font-size: 13.5px; line-height: 1.55; margin: 0 0 18px; }
-.samples { display: flex; flex-direction: column; gap: 8px; width: 100%; }
-.sample {
+.welcomeSub { color: var(--genui-muted); font-size: 13.5px; line-height: 1.55; margin: 0 0 18px; max-width: 460px; }
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+.sceneCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   text-align: left;
-  font-size: 13px;
-  color: var(--genui-text);
   background: var(--genui-panel-2);
   border: 1px solid var(--genui-line);
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: 12px;
+  padding: 12px 13px;
   cursor: pointer;
-  transition: border-color 0.15s, transform 0.1s, background 0.15s;
+  transition: border-color 0.15s, transform 0.1s, background 0.15s, box-shadow 0.15s;
 }
-.sample:hover { border-color: #5b58f0aa; background: #20242f; transform: translateY(-1px); }
+.sceneCard:hover {
+  border-color: #5b58f0aa;
+  background: #20242f;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px #00000033;
+}
+.sceneIcon { font-size: 20px; line-height: 1; }
+.sceneTitle { font-family: var(--genui-font-head); font-weight: 600; font-size: 13.5px; color: var(--genui-text); }
+.sceneBlurb { font-size: 12px; line-height: 1.45; color: var(--genui-muted); }
 
 .turn { display: flex; flex-direction: column; gap: 8px; }
 .turn[data-role="user"] { align-items: flex-end; }
