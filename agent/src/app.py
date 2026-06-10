@@ -7,7 +7,11 @@ the frontend.
                    the whole protocol surface; `AGUIAdapter.dispatch_request`
                    handles request parsing, running the agent, and SSE encoding.
 - GET  /config  -> small helper so the UI can show which model is running.
-- GET  /        -> the single-file frontend (frontend/index.html).
+- GET  /        -> the built demo playground (webui/dist-playground), if present.
+
+The real frontend is the `@genui/react` SDK in `webui/`; `/` only serves the
+built playground demo for local convenience. Run `npm run build:playground` in
+`webui/` to produce it.
 
 Run with:  uvicorn app:app --reload --port 8000
 """
@@ -19,7 +23,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic_ai.ui import StateDeps
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 
@@ -27,7 +31,7 @@ from .agent import MODEL, AppState, agent
 
 load_dotenv()
 
-FRONTEND = Path(__file__).resolve().parent.parent.parent / "webui"
+PLAYGROUND_DIST = Path(__file__).resolve().parent.parent.parent / "webui" / "dist-playground"
 
 app = FastAPI(title="AG-UI Generative UI Agent")
 
@@ -60,7 +64,7 @@ async def config() -> dict:
     return {"model": MODEL}
 
 
-@app.get("/")
-async def index() -> FileResponse:
-    """Serve the chat + generative-UI frontend."""
-    return FileResponse(FRONTEND / "index.html")
+# Serve the built playground demo at `/` (after the API routes, so they win).
+# Skipped gracefully if it hasn't been built yet.
+if PLAYGROUND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=PLAYGROUND_DIST, html=True), name="playground")

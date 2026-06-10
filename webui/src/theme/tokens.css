@@ -1,0 +1,45 @@
+/* GenUI design tokens. Scoped under .genui-root so they never leak to the host.
+ * Hosts override any token via the <GenUIProvider theme> prop (which sets inline
+ * --genui-* vars on the same root) or by targeting .genui-root in their own CSS. */
+.genui-root {
+  /* dark chat chrome */
+  --genui-ink: #14161c;
+  --genui-panel: #191c24;
+  --genui-panel-2: #1f232d;
+  --genui-line: #2b3140;
+  --genui-text: #e8eaf0;
+  --genui-muted: #9aa3b4;
+  --genui-faint: #6b7382;
+
+  /* brand / accents */
+  --genui-accent: #7b78ff;
+  --genui-accent-2: #34d0c4;
+  --genui-warn: #ff6b5a;
+  --genui-done: #129b7e;
+
+  /* light card surfaces (agent HTML lives on light bg) */
+  --genui-board-bg: #eceef3;
+  --genui-card: #ffffff;
+  --genui-card-line: #e5e8ef;
+  --genui-card-ink: #1b1e27;
+
+  /* shape & type */
+  --genui-radius: 14px;
+  --genui-radius-sm: 8px;
+  --genui-font: "Inter", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  --genui-font-head: "Space Grotesk", var(--genui-font);
+  --genui-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* layout */
+  --genui-sidebar-w: 400px;
+
+  color: var(--genui-text);
+  font-family: var(--genui-font);
+  box-sizing: border-box;
+}
+
+.genui-root *,
+.genui-root *::before,
+.genui-root *::after {
+  box-sizing: border-box;
+}
