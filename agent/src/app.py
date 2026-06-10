@@ -13,15 +13,17 @@ Run with:  uvicorn app:app --reload --port 8000
 """
 
 
+from dataclasses import replace
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from pydantic_ai.ui import StateDeps
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 
-from .agent import MODEL, agent
+from .agent import MODEL, AppState, agent
 
 load_dotenv()
 
@@ -42,8 +44,14 @@ app.add_middleware(
 
 @app.post("/agent")
 async def run_agent(request: Request) -> Response:
-    """AG-UI endpoint: stream AG-UI events for one agent run."""
-    return await AGUIAdapter.dispatch_request(request, agent=agent)
+    """AG-UI endpoint: stream AG-UI events for one agent run.
+
+    A fresh `StateDeps[AppState]` is created per request; the adapter deserialises
+    the frontend's `state` into `deps.state` before the run. `replace` guards
+    against concurrent requests sharing one deps object.
+    """
+    deps = replace(StateDeps(AppState()))
+    return await AGUIAdapter.dispatch_request(request, agent=agent, deps=deps)
 
 
 @app.get("/config")

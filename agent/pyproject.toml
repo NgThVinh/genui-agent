@@ -23,7 +23,7 @@ module-root = "."
 module-name = "src"
 
 [dependency-groups]
-dev = ["ruff", "ty"]
+dev = ["ruff", "ty", "pytest"]
 
 [tool.ruff]
 line-length = 120
@@ -32,6 +32,13 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = ["D", "COM812", "ISC001"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert freely, use private helpers, and re-import names by design.
+"tests/**" = ["S101", "S110", "SIM105", "ANN201", "ANN202", "ANN401", "SLF001", "PLR2004", "INP001", "E501", "TC001", "TC002", "TC003"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.ty.environment]
 python-version = "3.12"
